@@ -29,6 +29,7 @@ jobs:
           unzip -q -j -o "$RUNNER_TEMP/unity.nupkg" 'lib/*/*.dll' -d "$REF/EscapeFromTarkov_Data/Managed" || true
           curl -fsSL -o "$RUNNER_TEMP/bepinex.zip" https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.2/BepInEx_win_x64_5.4.23.2.zip
           unzip -q -o "$RUNNER_TEMP/bepinex.zip" "BepInEx/core/*" -d "$REF"
+          chmod -R a+rX "$REF"   # the NuGet package's zip entries carry no permission bits
           echo "::notice::UnityEngine.Modules $VER; package files: $(unzip -Z1 "$RUNNER_TEMP/unity.nupkg" | grep -i '\.dll$' | head -8 | tr '\n' ' ')"
           echo "::notice::copied $(ls "$REF/EscapeFromTarkov_Data/Managed" | wc -l) files; UnityEngine.dll: $(ls "$REF/EscapeFromTarkov_Data/Managed/UnityEngine.dll" 2>&1); core: $(ls "$REF/EscapeFromTarkov_Data/Managed/UnityEngine.CoreModule.dll" 2>&1)"
           echo "::notice::versions: $(curl -fsSL https://api.nuget.org/v3-flatcontainer/unityengine.modules/index.json | python3 -c "import sys,json; v=json.load(sys.stdin)['versions']; print(len(v), v[:3], v[-6:])")"
