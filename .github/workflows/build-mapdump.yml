@@ -25,12 +25,12 @@ jobs:
             | python3 -c "import sys,json; v=json.load(sys.stdin)['versions']; m=[x for x in v if x.startswith('2022.3.')]; print((m or v)[-1])")
           echo "UnityEngine.Modules $VER"
           curl -fsSL -o "$RUNNER_TEMP/unity.nupkg" "https://api.nuget.org/v3-flatcontainer/unityengine.modules/$VER/unityengine.modules.$VER.nupkg"
-          unzip -q -o "$RUNNER_TEMP/unity.nupkg" -d "$RUNNER_TEMP/unity"
-          find "$RUNNER_TEMP/unity" -name 'UnityEngine*.dll' -exec cp {} "$REF/EscapeFromTarkov_Data/Managed/" \;
+          unzip -q -j -o "$RUNNER_TEMP/unity.nupkg" 'lib/*.dll' -d "$REF/EscapeFromTarkov_Data/Managed" || true
+          unzip -q -j -o "$RUNNER_TEMP/unity.nupkg" 'lib/*/*.dll' -d "$REF/EscapeFromTarkov_Data/Managed" || true
           curl -fsSL -o "$RUNNER_TEMP/bepinex.zip" https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.2/BepInEx_win_x64_5.4.23.2.zip
           unzip -q -o "$RUNNER_TEMP/bepinex.zip" "BepInEx/core/*" -d "$REF"
           echo "::notice::UnityEngine.Modules $VER; package files: $(unzip -Z1 "$RUNNER_TEMP/unity.nupkg" | grep -i '\.dll$' | head -8 | tr '\n' ' ')"
-          echo "::notice::copied: $(ls "$REF/EscapeFromTarkov_Data/Managed" | head -12 | tr '\n' ' ') ($(ls "$REF/EscapeFromTarkov_Data/Managed" | wc -l) files)"
+          echo "::notice::copied $(ls "$REF/EscapeFromTarkov_Data/Managed" | wc -l) files; UnityEngine.dll: $(ls "$REF/EscapeFromTarkov_Data/Managed/UnityEngine.dll" 2>&1); core: $(ls "$REF/EscapeFromTarkov_Data/Managed/UnityEngine.CoreModule.dll" 2>&1)"
           echo "::notice::versions: $(curl -fsSL https://api.nuget.org/v3-flatcontainer/unityengine.modules/index.json | python3 -c "import sys,json; v=json.load(sys.stdin)['versions']; print(len(v), v[:3], v[-6:])")"
           echo "SPT_REF=$REF" >> "$GITHUB_ENV"
       - name: Build
