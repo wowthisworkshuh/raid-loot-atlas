@@ -117,6 +117,44 @@ class Terrain:
                 "h": [R(v) for v in self.h.ravel()]}
 
 
+def carve_water(terrain, feats, M, cfg, pts):
+    """Give each body of water one flat level and dig the ground under it below that level.
+
+    The ground grid is interpolated from loot spots, so on its own it runs straight across rivers and
+    lakes. The level is the low edge of the ground round the water (its shoreline), kept under any
+    spot that sits inside the water outline (piers, boats)."""
+    n = terrain.n
+    gx = terrain.x0 + np.arange(n) * terrain.dx; gz = terrain.z0 + np.arange(n) * terrain.dz
+    GX, GZ = np.meshgrid(gx, gz)  # [i (z), j (x)] like terrain.h
+    cells = np.stack([GX.ravel(), GZ.ravel()], 1)
+    xz = pts[:, [0, 2]]
+    levels, masks = {}, []
+    for ft in feats:
+        if cfg["floors"].get(ft["layer"]) != 0 or "water" not in ft["cls"]:
+            continue
+        for raw in ft["rings"]:
+            if len(raw) < 3:
+                continue
+            ring = M(raw); path = Path(ring)
+            inside = path.contains_points(cells).reshape(n, n)
+            # shore: the cells just outside the outline
+            grown = inside.copy()
+            grown[1:, :] |= inside[:-1, :]; grown[:-1, :] |= inside[1:, :]; grown[:, 1:] |= inside[:, :-1]; grown[:, :-1] |= inside[:, 1:]
+            shore = grown & ~inside
+            edge = terrain.at(ring[:, 0], ring[:, 1])
+            samples = np.concatenate([terrain.h[shore], edge]) if shore.any() else edge
+            level = float(np.quantile(samples, 0.15)) - 0.3
+            wet = pts[path.contains_points(xz), 1]
+            if len(wet):
+                level = min(level, float(np.min(wet)) - 0.4)
+            levels[id(raw)] = level
+            masks.append((inside, shore, level))
+    for inside, shore, level in masks:  # dig the bed, and pull the shoreline down to meet the water
+        terrain.h = np.where(inside, np.minimum(terrain.h, level - 1.5), terrain.h)
+        terrain.h = np.where(shore, np.minimum(terrain.h, level + 0.4), terrain.h)
+    return levels
+
+
 def build_svg_map(mid, cfg, svgdir, pts):
     vb, feats = svgparse.read(os.path.join(svgdir, cfg["svg"] + ".svg"))
     M = Mapper(vb, cfg["bounds"], cfg["uv"])
@@ -133,6 +171,9 @@ def build_svg_map(mid, cfg, svgdir, pts):
                     if len(raw) >= 3:
                         indoors |= Path(M(raw)).contains_points(xz)
         terrain = Terrain(pts[~indoors], cfg["bounds"])
+        water_levels = carve_water(terrain, feats, M, cfg, pts)
+    else:
+        water_levels = {}
     items, counts = [], {}
 
     def add(it):
@@ -194,7 +235,8 @@ def build_svg_map(mid, cfg, svgdir, pts):
             gx, gz = ring[:, 0], ring[:, 1]
             ground = float(np.min(terrain.at(gx, gz))) if terrain is not None else 0.0
             if cls & {"water"}:
-                add({"t": "flat", "k": "water", "r": flat(ring)})
+                lvl = water_levels.get(id(raw))
+                add({"t": "flat", "k": "water", "r": flat(ring), **({"y": R(lvl)} if lvl is not None else {})})
             elif cls & {"cement", "tarmac", "gravel", "wood"} and floor <= 0:
                 k = "pave" if "cement" in cls else "wood" if "wood" in cls else "road"
                 add({"t": "flat", "k": k, "r": flat(ring)})

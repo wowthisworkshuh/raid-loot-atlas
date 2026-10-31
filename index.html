@@ -125,7 +125,7 @@ select { width: 100%; background: var(--raise); border: 1px solid var(--line); b
 }
 .badge strong { color: var(--fg); font-family: var(--font-display); letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
 .badge.warn { color: var(--todo); border-color: color-mix(in srgb, var(--todo) 40%, var(--line)); }
-.help { position: absolute; bottom: 12px; right: max(12px, env(safe-area-inset-right, 0px)); font-size: 11px; color: var(--faint); pointer-events: none; text-align: right; }
+.help { position: absolute; bottom: 60px; right: max(12px, env(safe-area-inset-right, 0px)); font-size: 11px; color: var(--faint); pointer-events: none; text-align: right; }
 .labels { position: absolute; inset: 0; pointer-events: none; }
 .pin {
   position: absolute; transform: translate(-50%, calc(-100% - 10px)); display: flex; align-items: center; gap: 6px;
@@ -159,6 +159,17 @@ select { width: 100%; background: var(--raise); border: 1px solid var(--line); b
 .toggles { display: flex; flex-wrap: wrap; gap: 6px; }
 .toggles .chip { display: inline-flex; align-items: center; gap: 6px; }
 .toggles .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); display: inline-block; }
+.floors {
+  position: absolute; left: 12px; bottom: max(12px, env(safe-area-inset-bottom, 0px)); display: flex; gap: 2px; padding: 3px;
+  background: color-mix(in srgb, var(--bg) 86%, transparent); border: 1px solid var(--line); border-radius: 4px; backdrop-filter: blur(6px);
+  max-width: calc(100% - 24px); overflow-x: auto;
+}
+.floors button {
+  background: none; border: none; border-radius: 2px; padding: 6px 10px; cursor: pointer; white-space: nowrap;
+  font-family: var(--font-display); font-weight: 600; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+}
+.floors button:hover { color: var(--fg); }
+.floors button[aria-pressed="true"] { background: var(--glow); color: var(--glow-ink); }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-family: var(--font-display); letter-spacing: .12em; text-transform: uppercase; font-size: 13px; pointer-events: none; }
 
 @media (max-width: 760px) {
@@ -231,7 +242,7 @@ body { margin: 0; }
       </section>
 
       <section>
-        <p class="label">Floor slice</p>
+        <p class="label">Height range</p>
         <div class="slice">
           <span>Low</span><input id="ymin" type="range" step="0.5" aria-label="Lowest height shown"><output id="ymin-o"></output>
           <span>High</span><input id="ymax" type="range" step="0.5" aria-label="Highest height shown"><output id="ymax-o"></output>
@@ -249,6 +260,7 @@ body { margin: 0; }
     <div class="hud" id="hud"></div>
     <div class="tip" id="tip" hidden></div>
     <div class="loading" id="loading">Loading spawn data</div>
+    <div class="floors" id="floors" hidden></div>
     <div class="help">Drag to orbit · right-drag to pan · scroll to zoom · hover a dot for its loot</div>
   </main>
 </div>
@@ -393,6 +405,7 @@ async function loadMap(id) {
   map = cache[id];
   buildPoints();
   setupSlice();
+  buildFloors();
   frame();
   contData = null; if (contPts) { scene.remove(contPts); contPts.geometry.dispose(); contPts = null; }
   loadModel(id);
@@ -568,8 +581,10 @@ function buildBlockout(B) {
     } else if (it.t === "flat") {
       const ring = ringOf(it.r); if (ring.length < 3) continue;
       const off = it.k === "water" ? 0.05 : it.k === "veg" ? 0.08 : 0.12;
+      // water has one level for the whole body; everything else drapes over the ground
+      const yOf = (x, z) => it.y != null ? it.y : hAt(x, z) + off;
       for (const [a, b, c] of tris(ring)) {
-        const v = [a, b, c].map((k) => P(ring[k][0], hAt(ring[k][0], ring[k][1]) + off, ring[k][1]));
+        const v = [a, b, c].map((k) => P(ring[k][0], yOf(ring[k][0], ring[k][1]), ring[k][1]));
         A.tri(v[0], v[1], v[2], col, it.k === "water" ? 0 : 1, 0);
       }
     } else if (it.t === "line") {
@@ -620,25 +635,51 @@ async function loadBlockout(id) {
 // ---------- extracts + place names ----------
 const SHOW = { names: true, p: true, s: true, t: true };
 try { Object.assign(SHOW, JSON.parse(localStorage.getItem("atlas-show") || "{}")); } catch {}
-let marks = [], beams = null;
+let marks = [], beams = null, exitDots = null;
+// pillars and dots hide with the toggles and with the floor slice (by the extract's own height)
+const exitBeamMat = new THREE.ShaderMaterial({
+  uniforms, transparent: true, depthWrite: false, depthTest: false,
+  vertexShader: `attribute vec3 color; attribute float aOn; attribute float aBaseY; varying vec3 vC; varying float vShow; varying float vT;
+    uniform float uYMin, uYMax;
+    void main(){ vC = color; vShow = aOn * step(uYMin - 3.0, aBaseY) * step(aBaseY, uYMax + 3.0); vT = position.y - aBaseY;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `varying vec3 vC; varying float vShow; varying float vT;
+    void main(){ if (vShow < 0.5) discard; gl_FragColor = vec4(vC, 0.35 + 0.55 * clamp(vT / 9.0, 0.0, 1.0)); }`,
+});
+const exitDotMat = new THREE.ShaderMaterial({
+  uniforms, transparent: true, depthWrite: false, depthTest: false,
+  vertexShader: `attribute vec3 color; attribute float aOn; varying vec3 vC; varying float vShow; uniform float uYMin, uYMax;
+    void main(){ vC = color; vShow = aOn * step(uYMin - 3.0, position.y) * step(position.y, uYMax + 3.0);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_PointSize = vShow * 11.0; }`,
+  fragmentShader: `varying vec3 vC; varying float vShow;
+    void main(){ if (vShow < 0.5) discard; float d = length(gl_PointCoord - 0.5) * 2.0; if (d > 1.0) discard;
+      vec3 c = d > 0.62 ? vec3(0.04, 0.05, 0.06) : vC; gl_FragColor = vec4(c, 1.0); }`,
+});
 const EXIT_STYLE = { p: ["PMC", "--exit-pmc", 0x74c69d], s: ["Scav", "--exit-scav", 0xb79cff], a: ["PMC + Scav", "--exit-any", 0xe8ecef], "-": ["Exit", "--exit-any", 0xe8ecef], t: ["Transit", "--transit", 0x7fd1e0] };
 function buildMarks(B) {
-  if (beams) { scene.remove(beams); beams.geometry.dispose(); beams = null; }
-  const box = $("marks"); box.innerHTML = ""; marks = [];
-  const pos = [], col = [];
+  clearMarks();
+  const box = $("marks");
+  const pos = [], col = [], baseY = [], dpos = [], dcol = [];
   for (const e of B.exits || []) {
     const [label, cssVar, hex] = EXIT_STYLE[e.k] || EXIT_STYLE["-"];
     const [x, y, z] = toWorld(e.x, e.y, e.z);
     const el = document.createElement("div"); el.className = "exit"; el.style.setProperty("--c", `var(${cssVar})`);
     el.innerHTML = `<b>${e.k === "t" ? "TRANSIT" : label.toUpperCase()}</b>${esc(e.k === "t" ? "to " + e.n : e.n)}`;
     box.appendChild(el);
-    marks.push({ el, p: new THREE.Vector3(x, y + 9, z), kind: e.k === "a" || e.k === "-" ? "a" : e.k, lo: e.y - 4, hi: e.y + 4, pri: 2 });
-    const c = new THREE.Color(hex); pos.push(x, y - 1, z, x, y + 9, z); col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+    marks.push({ el, p: new THREE.Vector3(x, y + 9, z), kind: e.k === "a" || e.k === "-" ? "a" : e.k, lo: e.y - 3, hi: e.y + 3, pri: 2 });
+    const c = new THREE.Color(hex);
+    pos.push(x, y, z, x, y + 9, z); col.push(c.r, c.g, c.b, c.r, c.g, c.b); baseY.push(y, y);
+    dpos.push(x, y, z); dcol.push(c.r, c.g, c.b);
   }
   if (pos.length) {
-    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-    beams = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthTest: false }));
-    beams.renderOrder = 4; scene.add(beams);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    g.setAttribute("aBaseY", new THREE.Float32BufferAttribute(baseY, 1)); g.setAttribute("aOn", new THREE.Float32BufferAttribute(new Float32Array(baseY.length).fill(1), 1));
+    beams = new THREE.LineSegments(g, exitBeamMat); beams.renderOrder = 4; scene.add(beams);
+    const d = new THREE.BufferGeometry();
+    d.setAttribute("position", new THREE.Float32BufferAttribute(dpos, 3)); d.setAttribute("color", new THREE.Float32BufferAttribute(dcol, 3));
+    d.setAttribute("aOn", new THREE.Float32BufferAttribute(new Float32Array(dpos.length / 3).fill(1), 1));
+    exitDots = new THREE.Points(d, exitDotMat); exitDots.renderOrder = 5; scene.add(exitDots);
   }
   for (const l of [...(B.labels || [])].sort((a, b) => (b.s || 60) - (a.s || 60))) {
     const [x, y, z] = toWorld(l.x, l.y, l.z);
@@ -652,15 +693,13 @@ function buildMarks(B) {
 function applyToggles() {
   document.querySelectorAll("#toggles .chip").forEach((b) => b.setAttribute("aria-pressed", String(!!SHOW[b.dataset.t])));
   if (beams) {
-    const c = beams.geometry.attributes.color; // hide a beam by fading it to the background
+    const a = beams.geometry.attributes.aOn, d = exitDots.geometry.attributes.aOn;
     let i = 0;
     for (const m of marks) if (m.kind !== "names") {
-      const on = (m.kind === "a" ? SHOW.p || SHOW.s : SHOW[m.kind]);
-      const hex = new THREE.Color((EXIT_STYLE[m.kind === "a" ? "a" : m.kind])[2]);
-      const v = on ? hex : new THREE.Color(0x0b0f12);
-      c.setXYZ(i * 2, v.r, v.g, v.b); c.setXYZ(i * 2 + 1, v.r, v.g, v.b); i++;
+      const on = (m.kind === "a" ? SHOW.p || SHOW.s : SHOW[m.kind]) ? 1 : 0;
+      a.setX(i * 2, on); a.setX(i * 2 + 1, on); d.setX(i, on); i++;
     }
-    c.needsUpdate = true;
+    a.needsUpdate = true; d.needsUpdate = true;
   }
 }
 $("toggles").addEventListener("click", (e) => {
@@ -669,7 +708,11 @@ $("toggles").addEventListener("click", (e) => {
   try { localStorage.setItem("atlas-show", JSON.stringify(SHOW)); } catch {}
   applyToggles();
 });
-function clearMarks() { $("marks").innerHTML = ""; marks = []; if (beams) { scene.remove(beams); beams.geometry.dispose(); beams = null; } }
+function clearMarks() {
+  $("marks").innerHTML = ""; marks = [];
+  for (const o of [beams, exitDots]) if (o) { scene.remove(o); o.geometry.dispose(); }
+  beams = null; exitDots = null;
+}
 
 async function loadContainers(id) {
   try {
@@ -823,18 +866,58 @@ function computeHotspots() {
   $("labels").innerHTML = hotspots.map((h, i) => `<div class="pin" data-i="${i}"><i>${i + 1}</i>${fmtExp(h.s)} / raid</div>`).join("");
 }
 
+// ---------- floors ----------
+// Height bands per floor, cut at the gaps between floors in the loot spots (close to tarkov.dev's own floor ranges).
+const FLOORS = {
+  factory4_day: [["Tunnels", -10, -1.5], ["Ground", -1.5, 3], ["2nd floor", 3, 7], ["3rd floor", 7, 20]],
+  laboratory: [["Technical", -10, -2], ["Level 1", -2, 3.5], ["Level 2", 3.5, 30]],
+  interchange: [["Ground", -20, 25], ["2nd floor", 25, 32], ["3rd floor", 32, 45]],
+  sandbox: [["Garage", 0, 20], ["Street", 20, 28], ["2nd floor", 28, 32.3], ["3rd floor", 32.3, 40]],
+  rezervbase: [["Bunkers", -30, -7.5], ["Surface", -7.5, 12], ["Upper floors", 12, 40]],
+};
+let floorSel = -1; // -1 = all floors
+function buildFloors() {
+  const list = FLOORS[MODEL_OF[map.id] || map.id], bar = $("floors");
+  floorSel = -1; bar.hidden = !list;
+  if (!list) return;
+  bar.innerHTML = [`<button data-f="-1" aria-pressed="true">All floors</button>`]
+    .concat(list.map(([name], i) => `<button data-f="${i}" aria-pressed="false">${esc(name)}</button>`)).join("");
+}
+$("floors").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  pickFloor(+b.dataset.f);
+});
+function pickFloor(i) {
+  const list = FLOORS[MODEL_OF[map.id] || map.id];
+  floorSel = list ? i : -1;
+  document.querySelectorAll("#floors button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.f === floorSel)));
+  if (floorSel < 0) { $("ymin").value = map.ymin; $("ymax").value = map.ymax; applySlice(); }
+  else {
+    const [, lo, hi] = list[floorSel];
+    applySlice(Math.max(lo, map.ymin - 1), Math.min(hi, map.ymax + 1));
+  }
+  computeHotspots();
+}
+
 // ---------- floor slice ----------
 function setupSlice() {
   for (const id of ["ymin", "ymax"]) { const el = $(id); el.min = map.ymin; el.max = map.ymax; }
   $("ymin").value = map.ymin; $("ymax").value = map.ymax; applySlice();
 }
-function applySlice() {
-  let lo = +$("ymin").value, hi = +$("ymax").value;
-  if (lo > hi) { if (document.activeElement === $("ymin")) $("ymax").value = hi = lo; else $("ymin").value = lo = hi; }
+function applySlice(exactLo, exactHi) {
+  let lo, hi;
+  if (exactLo != null) { lo = exactLo; hi = exactHi; $("ymin").value = lo; $("ymax").value = hi; }
+  else {
+    lo = +$("ymin").value; hi = +$("ymax").value;
+    if (lo > hi) { if (document.activeElement === $("ymin")) $("ymax").value = hi = lo; else $("ymin").value = lo = hi; }
+  }
   uniforms.uYMin.value = lo - 0.01; uniforms.uYMax.value = hi + 0.01;
   $("ymin-o").textContent = lo.toFixed(1) + " m"; $("ymax-o").textContent = hi.toFixed(1) + " m";
 }
-for (const id of ["ymin", "ymax"]) $(id).addEventListener("input", () => { applySlice(); computeHotspots(); });
+for (const id of ["ymin", "ymax"]) $(id).addEventListener("input", () => {
+  if (floorSel >= 0) { floorSel = -1; document.querySelectorAll("#floors button").forEach((b) => b.setAttribute("aria-pressed", "false")); }
+  applySlice(); computeHotspots();
+});
 
 // ---------- hover ----------
 const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
