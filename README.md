@@ -44,8 +44,8 @@ Loot runs, key values and locked doors need data only the game has. `SurvivalPac
 
 It only reads; nothing in the raid changes.
 
-1. Install the [.NET SDK](https://dotnet.microsoft.com/download) (8 or newer) if you don't have it.
-2. `powershell -ExecutionPolicy Bypass -File kit\MapDump\build-mapdump.ps1 -Spt "C:\SPT"` builds and installs it. If the build fails, send Claude the error lines.
+1. Download `SurvivalPack.MapDump.dll` from the [mapdump-v0.2.0 release](https://github.com/wowthisworkshuh/raid-loot-atlas/releases/tag/mapdump-v0.2.0) (built by GitHub Actions from `kit/MapDump` on every change) and put it in `<SPT>\BepInEx\plugins\SurvivalPack.MapDump\`.
+2. Or build it yourself: install the [.NET SDK](https://dotnet.microsoft.com/download) and run `powershell -ExecutionPolicy Bypass -File kit\MapDump\build-mapdump.ps1 -Spt "C:\SPT"`.
 3. Load into a raid on Factory first. When the box top-left says the dump was written, send the `BepInEx\survivalpack-mapdump\factory4_day` folder to Claude to check the format. Then do the other maps (Customs, Woods, Shoreline, Interchange, Lighthouse, Reserve, Labs, Labyrinth, Ground Zero). Ctrl+F10 writes it again.
 4. `build-mapdump.ps1 -Spt "C:\SPT" -Collect` zips every map's dump to your Desktop. `-Uninstall` removes the plugin.
 
