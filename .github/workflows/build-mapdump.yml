@@ -34,7 +34,11 @@ jobs:
           echo "::notice::versions: $(curl -fsSL https://api.nuget.org/v3-flatcontainer/unityengine.modules/index.json | python3 -c "import sys,json; v=json.load(sys.stdin)['versions']; print(len(v), v[:3], v[-6:])")"
           echo "SPT_REF=$REF" >> "$GITHUB_ENV"
       - name: Build
-        run: dotnet build kit/MapDump/SurvivalPack.MapDump.csproj -c Release "-p:SptPath=$SPT_REF" -nologo
+        run: |
+          set -o pipefail
+          dotnet build kit/MapDump/SurvivalPack.MapDump.csproj -c Release "-p:SptPath=$SPT_REF" -nologo -v:n 2>&1 | tee build.log || {
+            grep -E "MSB3245|MSB3243|could not be resolved|HintPath|Primary reference" build.log | sort -u | head -15 | sed 's/^/::notice::/'
+            exit 1; }
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
