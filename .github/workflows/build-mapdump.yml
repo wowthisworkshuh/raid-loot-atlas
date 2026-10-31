@@ -1,0 +1,46 @@
+# Builds kit/MapDump into SurvivalPack.MapDump.dll and publishes it as a public GitHub release
+# (approved by the repo owner, Oct 31 2026), so nobody needs the .NET SDK. The Unity and BepInEx
+# libraries it compiles against are reference copies (UnityEngine.Modules from NuGet, BepInEx 5
+# from its GitHub release); the game's own copies are used at runtime.
+name: Build MapDump plugin
+on:
+  push:
+    paths: ["kit/MapDump/**", ".github/workflows/build-mapdump.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Fetch reference libraries
+        run: |
+          set -euo pipefail
+          REF="$RUNNER_TEMP/spt"; mkdir -p "$REF/EscapeFromTarkov_Data/Managed" "$REF/BepInEx/core"
+          VER=$(curl -fsSL https://api.nuget.org/v3-flatcontainer/unityengine.modules/index.json \
+            | python3 -c "import sys,json; v=json.load(sys.stdin)['versions']; m=[x for x in v if x.startswith('2022.3.')]; print((m or v)[-1])")
+          echo "UnityEngine.Modules $VER"
+          curl -fsSL -o "$RUNNER_TEMP/unity.nupkg" "https://api.nuget.org/v3-flatcontainer/unityengine.modules/$VER/unityengine.modules.$VER.nupkg"
+          unzip -q -o "$RUNNER_TEMP/unity.nupkg" -d "$RUNNER_TEMP/unity"
+          find "$RUNNER_TEMP/unity" -name 'UnityEngine*.dll' -exec cp {} "$REF/EscapeFromTarkov_Data/Managed/" \;
+          curl -fsSL -o "$RUNNER_TEMP/bepinex.zip" https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.2/BepInEx_win_x64_5.4.23.2.zip
+          unzip -q -o "$RUNNER_TEMP/bepinex.zip" "BepInEx/core/*" -d "$REF"
+          ls "$REF/EscapeFromTarkov_Data/Managed" | head -60; ls "$REF/BepInEx/core"
+          echo "SPT_REF=$REF" >> "$GITHUB_ENV"
+      - name: Build
+        run: dotnet build kit/MapDump/SurvivalPack.MapDump.csproj -c Release "-p:SptPath=$SPT_REF" -nologo
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          DLL=kit/MapDump/bin/Release/netstandard2.1/SurvivalPack.MapDump.dll
+          VER=$(grep -oP '(?<=<Version>)[^<]+' kit/MapDump/SurvivalPack.MapDump.csproj)
+          TAG="mapdump-v$VER"
+          gh release delete "$TAG" -y --cleanup-tag || true
+          gh release create "$TAG" "$DLL" --title "SurvivalPack.MapDump $VER" \
+            --notes "Map dump plugin for the Raid Loot Atlas. Put SurvivalPack.MapDump.dll in <SPT>/BepInEx/plugins/SurvivalPack.MapDump/. Built from commit $GITHUB_SHA."

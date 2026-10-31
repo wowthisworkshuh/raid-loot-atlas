@@ -46,16 +46,28 @@ namespace SurvivalPack.MapDump
             Logger.LogInfo("SurvivalPack.MapDump 0.2.0 ready (Ctrl+F10 in raid)");
         }
 
+        UnityEngine.Object _world;
+        float _nextLook;
+
         void Update()
         {
-            var world = FindByTypeName("EFT.GameWorld") ?? FindByTypeName("EFT.ClientGameWorld");
-            if (world == null) { _worldSeenAt = -1; return; }
-            var map = MapId(world);
-            if (_worldSeenAt < 0 || map != _worldMap) { _worldSeenAt = Time.realtimeSinceStartup; _worldMap = map; }
+            // finding the raid world scans every object, so only look every 2 seconds
+            if (_world == null && Time.realtimeSinceStartup >= _nextLook)
+            {
+                _nextLook = Time.realtimeSinceStartup + 2f;
+                _world = (FindByTypeName("EFT.GameWorld") ?? FindByTypeName("EFT.ClientGameWorld")) as UnityEngine.Object;
+                if (_world != null)
+                {
+                    var m = MapId(_world);
+                    if (_worldSeenAt < 0 || m != _worldMap) { _worldSeenAt = Time.realtimeSinceStartup; _worldMap = m; }
+                }
+                else _worldSeenAt = -1;
+            }
+            if (_world == null) return; // also true once the raid's world is destroyed
 
-            if (_key.Value.IsDown()) { Dump(map); return; }
-            if (_auto.Value && !_done.Contains(map) && Time.realtimeSinceStartup - _worldSeenAt > _autoDelay.Value)
-                Dump(map);
+            if (_key.Value.IsDown()) { Dump(_worldMap); return; }
+            if (_auto.Value && !_done.Contains(_worldMap) && Time.realtimeSinceStartup - _worldSeenAt > _autoDelay.Value)
+                Dump(_worldMap);
         }
 
         void OnGUI()
