@@ -39,6 +39,8 @@ Loot runs, key values and locked doors need data only the game has. `SurvivalPac
 - `doors.json`: every door, trunk and keycard door with the key it needs
 - `containers.json`: every container's position, matched to the server's container ids
 - `exits.json`, `transits.json`: every extract and transit as your SPT version has them
+- `colliders.bin` (+ `layers.json`): building layouts, from the game's own collision shapes: every box collider, the triangles of every mesh collider the game keeps readable, and the outline boxes of the rest
+- `terrain.bin`: the real ground heights, replacing the rough ground estimated from loot spots
 
 It only reads; nothing in the raid changes.
 
@@ -53,6 +55,7 @@ What it powers, once the dumps are in:
 - **My keys:** tell the map which keys you have. Doors show green if you have the key and red if you don't, and the loot glow and routes only use rooms you can get into.
 - **Key values:** for each key, what loot sits behind its doors on average per raid and what it's worth. The rooms behind a door are found by closing it on the walk map and seeing which loot gets cut off.
 - **Suggested keys:** the keys per map whose rooms are worth the most.
+- **Interior layouts:** walls traced round the edges of the walkable areas (every room, corridor and stairwell the bots can reach), filled in with the collision shapes, on the real terrain.
 
 ## Adding a real map model (kit/)
 

@@ -3,6 +3,9 @@
 //   doors.json       every door / trunk / keycard door: id, key, state, position, size
 //   containers.json  every lootable container: id (matches SPT's staticContainers), position
 //   exits.json       extracts and transits: name, type, position
+//   colliders.bin    building layouts: every solid box collider (centre, size, rotation) and the triangles
+//                    of every mesh collider the game keeps readable; layers.json names their layers
+//   terrain.bin      the real ground: each terrain's height grid (downsampled to at most 513 x 513)
 //   meta.json        map id, game and plugin versions, counts
 // Output: <SPT>/BepInEx/survivalpack-mapdump/<mapId>/. Nothing in the raid is changed.
 //
@@ -24,7 +27,7 @@ using UnityEngine.SceneManagement;
 
 namespace SurvivalPack.MapDump
 {
-    [BepInPlugin("com.survivalpack.mapdump", "SurvivalPack.MapDump", "0.1.0")]
+    [BepInPlugin("com.survivalpack.mapdump", "SurvivalPack.MapDump", "0.2.0")]
     public class Plugin : BaseUnityPlugin
     {
         ConfigEntry<KeyboardShortcut> _key;
@@ -40,7 +43,7 @@ namespace SurvivalPack.MapDump
             _key = Config.Bind("Dump", "Dump now", new KeyboardShortcut(KeyCode.F10, KeyCode.LeftControl), "Write this map's data now (in raid).");
             _auto = Config.Bind("Dump", "Dump automatically", true, "Write each map's data once per game session, a little after the raid loads.");
             _autoDelay = Config.Bind("Dump", "Seconds after load", 20f, "Wait this long after the raid world appears, so every door and container has loaded.");
-            Logger.LogInfo("SurvivalPack.MapDump 0.1.0 ready (Ctrl+F10 in raid)");
+            Logger.LogInfo("SurvivalPack.MapDump 0.2.0 ready (Ctrl+F10 in raid)");
         }
 
         void Update()
@@ -76,16 +79,19 @@ namespace SurvivalPack.MapDump
                 int conts = DumpObjects(Path.Combine(dir, "containers.json"), "EFT.Interactive.LootableContainer", Container);
                 int exits = DumpObjects(Path.Combine(dir, "exits.json"), "EFT.Interactive.ExfiltrationPoint", Exit);
                 int transits = DumpObjects(Path.Combine(dir, "transits.json"), "EFT.Interactive.TransitPoint", Generic);
+                var (boxes, meshes, meshTris, unreadable) = DumpColliders(Path.Combine(dir, "colliders.bin"), Path.Combine(dir, "layers.json"));
+                int terrains = DumpTerrain(Path.Combine(dir, "terrain.bin"));
                 var meta = new StringBuilder("{");
                 Prop(meta, "map", map); meta.Append(',');
-                Prop(meta, "plugin", "0.1.0"); meta.Append(',');
+                Prop(meta, "plugin", "0.2.0"); meta.Append(',');
                 Prop(meta, "unity", Application.unityVersion); meta.Append(',');
                 Prop(meta, "game", Application.version); meta.Append(',');
                 Prop(meta, "scenes", string.Join(";", Enumerable.Range(0, SceneManager.sceneCount).Select(i => SceneManager.GetSceneAt(i).name))); meta.Append(',');
                 Prop(meta, "time", DateTime.UtcNow.ToString("o")); meta.Append(',');
-                meta.Append($"\"navmeshTriangles\":{tris},\"doors\":{doors},\"containers\":{conts},\"exits\":{exits},\"transits\":{transits}}}");
+                meta.Append($"\"navmeshTriangles\":{tris},\"doors\":{doors},\"containers\":{conts},\"exits\":{exits},\"transits\":{transits},");
+                meta.Append($"\"boxColliders\":{boxes},\"meshColliders\":{meshes},\"meshColliderTriangles\":{meshTris},\"unreadableMeshColliders\":{unreadable},\"terrains\":{terrains}}}");
                 File.WriteAllText(Path.Combine(dir, "meta.json"), meta.ToString());
-                Say($"Map dump for {map} written: {tris:N0} walk triangles, {doors} doors, {conts} containers, {exits} exits. Folder: BepInEx/survivalpack-mapdump/{Safe(map)}");
+                Say($"Map dump for {map} written: {tris:N0} walk triangles, {doors} doors, {conts} containers, {exits} exits, {boxes + meshes:N0} wall/floor shapes. Folder: BepInEx/survivalpack-mapdump/{Safe(map)}");
             }
             catch (Exception e)
             {
@@ -108,6 +114,84 @@ namespace SurvivalPack.MapDump
                 foreach (var a in t.areas) w.Write(a);
             }
             return t.indices.Length / 3;
+        }
+
+        // ---------- building layouts ----------
+        // COLL v1: int boxCount, then per box: int layer, int kind (0 box collider, 1 bounds of a mesh collider the game
+        //          doesn't keep readable), float3 centre (world), float3 size (scaled), float4 rotation;
+        //          int meshCount, then per mesh: int layer, int vertCount, int indexCount, float3 verts (world), int indices.
+        // Triggers, disabled colliders and moving bodies are skipped; so is anything above 2,000,000 mesh triangles in total.
+        static (int, int, int, int) DumpColliders(string path, string layersPath)
+        {
+            var cols = UnityEngine.Object.FindObjectsOfType<Collider>()
+                .Where(c => c.enabled && !c.isTrigger && c.gameObject.activeInHierarchy && !(c is TerrainCollider) && !(c is CharacterController))
+                .Where(c => { var rb = c.attachedRigidbody; return rb == null || rb.isKinematic; })
+                .ToList();
+            var boxes = cols.OfType<BoxCollider>().ToList();
+            var meshes = cols.OfType<MeshCollider>().ToList();
+            int meshTris = 0, unreadable = 0, written = 0;
+            var unreadableMeshes = meshes.Where(m => m.sharedMesh != null && !m.sharedMesh.isReadable).ToList();
+            unreadable = unreadableMeshes.Count;
+            using (var w = new BinaryWriter(File.Create(path)))
+            {
+                w.Write(Encoding.ASCII.GetBytes("COLL")); w.Write(1);
+                w.Write(boxes.Count + unreadableMeshes.Count);
+                void Box(Transform t, int layer, int kind, Vector3 localCenter, Vector3 localSize)
+                {
+                    var c = t.TransformPoint(localCenter);
+                    var s = Vector3.Scale(localSize, t.lossyScale);
+                    w.Write(layer); w.Write(kind);
+                    w.Write(c.x); w.Write(c.y); w.Write(c.z);
+                    w.Write(Mathf.Abs(s.x)); w.Write(Mathf.Abs(s.y)); w.Write(Mathf.Abs(s.z));
+                    var q = t.rotation; w.Write(q.x); w.Write(q.y); w.Write(q.z); w.Write(q.w);
+                }
+                foreach (var b in boxes) Box(b.transform, b.gameObject.layer, 0, b.center, b.size);
+                foreach (var m in unreadableMeshes) Box(m.transform, m.gameObject.layer, 1, m.sharedMesh.bounds.center, m.sharedMesh.bounds.size);
+                var keep = new List<(MeshCollider, Mesh)>();
+                foreach (var m in meshes)
+                {
+                    var mesh = m.sharedMesh;
+                    if (mesh == null || !mesh.isReadable) continue;
+                    int n = (int)(mesh.GetIndexCount(0) / 3);
+                    for (int sm = 1; sm < mesh.subMeshCount; sm++) n += (int)(mesh.GetIndexCount(sm) / 3);
+                    if (meshTris + n > 2000000) continue;
+                    meshTris += n; keep.Add((m, mesh));
+                }
+                w.Write(keep.Count);
+                foreach (var (m, mesh) in keep)
+                {
+                    var verts = mesh.vertices; var idx = mesh.triangles; var tr = m.transform;
+                    w.Write(m.gameObject.layer); w.Write(verts.Length); w.Write(idx.Length);
+                    foreach (var v in verts) { var p = tr.TransformPoint(v); w.Write(p.x); w.Write(p.y); w.Write(p.z); }
+                    foreach (var i in idx) w.Write(i);
+                    written++;
+                }
+            }
+            var sb = new StringBuilder("{");
+            for (int i = 0; i < 32; i++) { if (i > 0) sb.Append(','); Prop(sb, i.ToString(Inv), LayerMask.LayerToName(i)); }
+            File.WriteAllText(layersPath, sb.Append('}').ToString());
+            return (boxes.Count, written, meshTris, unreadable);
+        }
+
+        // TERR v1: int count, then per terrain: float3 position, float3 size, int res, float heights[res*res] (metres, row = z)
+        static int DumpTerrain(string path)
+        {
+            var terrains = Terrain.activeTerrains;
+            using (var w = new BinaryWriter(File.Create(path)))
+            {
+                w.Write(Encoding.ASCII.GetBytes("TERR")); w.Write(1);
+                w.Write(terrains.Length);
+                foreach (var t in terrains)
+                {
+                    var d = t.terrainData; var p = t.transform.position; var size = d.size;
+                    int res = Mathf.Min(d.heightmapResolution, 513);
+                    w.Write(p.x); w.Write(p.y); w.Write(p.z); w.Write(size.x); w.Write(size.y); w.Write(size.z); w.Write(res);
+                    for (int z = 0; z < res; z++)
+                        for (int x = 0; x < res; x++)
+                            w.Write(d.GetInterpolatedHeight(x / (float)(res - 1), z / (float)(res - 1)));
+                }
+            }
+            return terrains.Length;
         }
 
         // ---------- objects ----------
