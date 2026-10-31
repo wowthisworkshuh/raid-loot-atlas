@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Raid Loot Atlas</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Where loot spawns on every map of our SPT server, with the odds per raid.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-height tool. Field kit sidebar on the left, 3D map fills the rest; stacks map-over-panel on phones.
+   Deliberately single dark look: a night-vision map table, loot glows like the raid-guide reference. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0f12;          /* map table, blue-black */
+  --panel: #12181c;       /* kit sidebar */
+  --raise: #192127;       /* inputs, rows */
+  --line: #26313a;        /* hairlines */
+  --fg: #dfe2dc;          /* bone text */
+  --muted: #8b969d;       /* secondary text */
+  --faint: #5b6770;       /* tertiary */
+  --glow: #ff8a2a;        /* loot glow, the one accent */
+  --glow-hot: #ffd27a;    /* glow core */
+  --glow-ink: #1a0d02;    /* text on glow */
+  --cold: #6fb7c9;        /* containers, secondary data */
+  --todo: #c9a64a;
+  --font-display: "Chakra Petch", "Bahnschrift", "DIN Alternate", "Arial Narrow", sans-serif;
+  --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; overflow: hidden; }
+* { box-sizing: border-box; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+
+.app { display: grid; grid-template-columns: 360px minmax(0, 1fr); height: 100%; }
+.kit {
+  background: var(--panel); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+}
+.kit-scroll { overflow-y: auto; padding-block: 16px 24px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 16px; display: flex; flex-direction: column; gap: 20px; min-height: 0; }
+.brand { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.brand h1 { font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: .06em; text-transform: uppercase; margin: 0; }
+.brand small { color: var(--faint); font-size: 12px; letter-spacing: .04em; }
+.label { font-family: var(--font-display); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+
+.maps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.map-btn {
+  background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 7px 6px;
+  font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
+  cursor: pointer; text-align: left; line-height: 1.2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.map-btn:hover { border-color: var(--faint); }
+.map-btn[aria-pressed="true"] { border-color: var(--glow); color: var(--glow); }
+.map-btn[disabled] { cursor: not-allowed; color: var(--faint); border-style: dashed; }
+.map-btn .tag { display: block; font-family: var(--font-body); font-weight: 500; font-size: 10px; letter-spacing: .08em; color: var(--todo); }
+.variants { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.variants[hidden] { display: none !important; }
+.chip {
+  background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; color: var(--muted);
+}
+.chip[aria-pressed="true"] { border-color: var(--glow); color: var(--fg); background: color-mix(in srgb, var(--glow) 14%, transparent); }
+
+.field { display: flex; flex-direction: column; gap: 8px; }
+.search { position: relative; }
+.search input {
+  width: 100%; background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 9px 10px 9px 32px;
+}
+.search input::placeholder { color: var(--faint); }
+.search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; stroke: var(--faint); fill: none; stroke-width: 2; }
+.row2 { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 8px; }
+select { width: 100%; background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 8px; min-width: 0; }
+
+.selection {
+  border: 1px solid color-mix(in srgb, var(--glow) 45%, var(--line)); border-radius: 4px; padding: 12px;
+  background: color-mix(in srgb, var(--glow) 6%, var(--panel)); display: flex; flex-direction: column; gap: 10px;
+}
+.sel-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.sel-name { font-family: var(--font-display); font-weight: 600; font-size: 16px; line-height: 1.2; text-wrap: balance; }
+.sel-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.clear { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 0; white-space: nowrap; }
+.clear:hover { color: var(--fg); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.stat b { display: block; font-family: var(--font-display); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--glow); line-height: 1.1; }
+.stat span { font-size: 11px; color: var(--muted); }
+
+.list { display: flex; flex-direction: column; }
+.item {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline;
+  padding: 7px 8px; border: none; background: none; border-bottom: 1px solid var(--line); text-align: left; cursor: pointer; width: 100%;
+}
+.item:hover { background: var(--raise); }
+.item[aria-current="true"] { background: color-mix(in srgb, var(--glow) 12%, transparent); }
+.item .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .e { font-variant-numeric: tabular-nums; color: var(--glow); font-weight: 600; font-size: 13px; }
+.item .m { grid-column: 1 / -1; font-size: 11px; color: var(--faint); }
+.bar { height: 2px; grid-column: 1 / -1; background: var(--line); border-radius: 1px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--glow); }
+.empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+
+.cont { display: flex; flex-direction: column; gap: 6px; }
+.cont-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; font-size: 13px; align-items: baseline; }
+.cont-row .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cont-row .c { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 12px; }
+.cont-row .p { color: var(--cold); font-variant-numeric: tabular-nums; font-weight: 600; min-width: 44px; text-align: right; }
+.note { font-size: 12px; color: var(--faint); line-height: 1.5; }
+.note b { color: var(--muted); font-weight: 600; }
+
+.slice { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; font-size: 12px; color: var(--muted); }
+.slice input { width: 100%; accent-color: var(--glow); }
+.slice output { font-variant-numeric: tabular-nums; color: var(--fg); min-width: 52px; text-align: right; }
+
+.stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.hud { position: absolute; top: 12px; left: 12px; right: max(12px, env(safe-area-inset-right, 0px)); display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.badge {
+  pointer-events: auto; background: color-mix(in srgb, var(--bg) 82%, transparent); border: 1px solid var(--line); border-radius: 3px;
+  padding: 5px 9px; font-size: 12px; color: var(--muted); backdrop-filter: blur(6px);
+}
+.badge strong { color: var(--fg); font-family: var(--font-display); letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
+.badge.warn { color: var(--todo); border-color: color-mix(in srgb, var(--todo) 40%, var(--line)); }
+.help { position: absolute; bottom: 12px; right: max(12px, env(safe-area-inset-right, 0px)); font-size: 11px; color: var(--faint); pointer-events: none; text-align: right; }
+.labels { position: absolute; inset: 0; pointer-events: none; }
+.pin {
+  position: absolute; transform: translate(-50%, calc(-100% - 10px)); display: flex; align-items: center; gap: 6px;
+  background: rgba(14, 16, 18, .88); border: 1px solid color-mix(in srgb, var(--glow) 70%, transparent); border-radius: 999px;
+  padding: 3px 10px 3px 3px; white-space: nowrap; font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: .05em; color: var(--fg);
+}
+.pin i { font-style: normal; width: 20px; height: 20px; border-radius: 50%; background: var(--glow); color: var(--glow-ink); display: grid; place-items: center; font-size: 11px; }
+.pin::after { content: ""; position: absolute; left: 50%; bottom: -11px; width: 1px; height: 10px; background: var(--glow); }
+.tip {
+  position: absolute; pointer-events: none; background: rgba(12, 15, 17, .95); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px;
+  font-size: 12px; max-width: 280px; min-width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.tip h4 { margin: 0 0 6px; font-family: var(--font-display); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.tip .r { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 2px 0; }
+.tip .r span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tip .r span:last-child { font-variant-numeric: tabular-nums; color: var(--glow); }
+.tip .r.dim span:last-child { color: var(--muted); }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-family: var(--font-display); letter-spacing: .12em; text-transform: uppercase; font-size: 13px; pointer-events: none; }
+
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 56vh auto; height: auto; min-height: 100%; }
+  .stage { order: -1; height: 56vh; }
+  .kit { border-right: none; border-top: 1px solid var(--line); overflow: visible; }
+  .kit-scroll { overflow: visible; padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .help { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+[hidden] { display: none !important; }
+body { margin: 0; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="kit">
+    <div class="kit-scroll">
+      <div class="brand">
+        <h1>Raid Loot Atlas</h1>
+        <small>SurvivalPack server</small>
+      </div>
+
+      <section>
+        <p class="label">Map</p>
+        <div class="maps" id="maps"></div>
+        <div class="variants" id="variants" hidden></div>
+      </section>
+
+      <section class="field">
+        <p class="label">Find loot</p>
+        <div class="search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+          <input id="q" type="search" placeholder="Item name, e.g. LEDX, GPU, Salewa" autocomplete="off" aria-label="Search items on this map">
+        </div>
+        <div class="row2">
+          <select id="cat" aria-label="Loot type"></select>
+          <select id="price" aria-label="Minimum value">
+            <option value="0">Any value</option>
+            <option value="25000">≥ ₽25k</option>
+            <option value="50000">≥ ₽50k</option>
+            <option value="100000" selected>≥ ₽100k</option>
+            <option value="250000">≥ ₽250k</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="selection" id="selection" aria-live="polite"></section>
+
+      <section>
+        <p class="label" id="list-label">Items</p>
+        <div class="list" id="list"></div>
+      </section>
+
+      <section>
+        <p class="label">Containers on this map</p>
+        <div class="cont" id="containers"></div>
+      </section>
+
+      <section>
+        <p class="label">Floor slice</p>
+        <div class="slice">
+          <span>Low</span><input id="ymin" type="range" step="0.5" aria-label="Lowest height shown"><output id="ymin-o"></output>
+          <span>High</span><input id="ymax" type="range" step="0.5" aria-label="Highest height shown"><output id="ymax-o"></output>
+        </div>
+      </section>
+
+      <p class="note" id="about"></p>
+    </div>
+  </aside>
+
+  <main class="stage" id="stage">
+    <canvas id="c"></canvas>
+    <div class="labels" id="labels"></div>
+    <div class="hud" id="hud"></div>
+    <div class="tip" id="tip" hidden></div>
+    <div class="loading" id="loading">Loading spawn data</div>
+    <div class="help">Drag to orbit · right-drag to pan · scroll to zoom · hover a dot for its loot</div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+
+// Map ids from SPT, the hash name for each, and how they group into buttons
+const SLUG = { bigmap: "customs", factory4_day: "factory", factory4_night: "factory-night", woods: "woods", shoreline: "shoreline",
+  interchange: "interchange", lighthouse: "lighthouse", rezervbase: "reserve", laboratory: "labs", labyrinth: "labyrinth",
+  sandbox: "ground-zero", sandbox_high: "ground-zero-21", tarkovstreets: "streets" };
+const GROUPS = [
+  { name: "Customs", ids: ["bigmap"] }, { name: "Factory", ids: ["factory4_day", "factory4_night"], vlabels: ["Day", "Night"] },
+  { name: "Woods", ids: ["woods"] }, { name: "Shoreline", ids: ["shoreline"] }, { name: "Interchange", ids: ["interchange"] },
+  { name: "Lighthouse", ids: ["lighthouse"] }, { name: "Reserve", ids: ["rezervbase"] }, { name: "The Lab", ids: ["laboratory"] },
+  { name: "Labyrinth", ids: ["labyrinth"] }, { name: "Ground Zero", ids: ["sandbox", "sandbox_high"], vlabels: ["Level 1–20", "Level 21+"] },
+  { name: "Streets", ids: ["tarkovstreets"], todo: true },
+];
+// Unity is left-handed; the map export (UnityGLTF) mirrors X, so spawn points do the same to line up with the model.
+let AXIS = { x: -1, z: 1 };
+const toWorld = (x, y, z) => [AXIS.x * x, y, AXIS.z * z];
+// Factory night and Ground Zero 21+ use the same level as their twin
+const MODEL_OF = { factory4_night: "factory4_day", sandbox_high: "sandbox" };
+
+const $ = (id) => document.getElementById(id);
+const fmtPct = (p) => p >= 0.995 ? "100%" : p >= 0.1 ? Math.round(p * 100) + "%" : p >= 0.01 ? (p * 100).toFixed(1) + "%" : p > 0 ? (p * 100).toFixed(2) + "%" : "0%";
+const fmtExp = (e) => e >= 10 ? e.toFixed(0) : e >= 1 ? e.toFixed(1) : e >= 0.01 ? e.toFixed(2) : e > 0 ? "<0.01" : "0";
+const fmtRub = (r) => r >= 1e6 ? "₽" + (r / 1e6).toFixed(1) + "M" : r >= 1e3 ? "₽" + Math.round(r / 1e3) + "k" : "₽" + r;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+let INDEX, ITEMS, CATS, TOP_OF = {};
+const QUEST_CATS = new Set(["5b619f1a86f77450a702a6f3", "quest"]); // Task items, Quest items
+let map = null;            // current map data
+let sel = { tpl: null };   // selected item, or null for the filter view
+let chanceAt = null;       // Float32Array: chance of the current selection at each point
+let contChance = null;     // same for placed containers (per raid: container spawns x item inside)
+const cache = {};
+
+// ---------- three.js scene ----------
+const canvas = $("c"), stage = $("stage");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x0b0f12);
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0b0f12, 0.0006);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 8000);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.08; controls.maxPolarAngle = Math.PI * 0.49; controls.screenSpacePanning = false;
+scene.add(new THREE.HemisphereLight(0xcfd8e0, 0x1a1e22, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.2); sun.position.set(-300, 600, 200); scene.add(sun);
+let grid = null;
+let modelRoot = null, basePts = null, glowPts = null, contPts = null, contData = null;
+const uniforms = { uYMin: { value: -1e4 }, uYMax: { value: 1e4 }, uScale: { value: 400 } };
+
+const baseMat = new THREE.ShaderMaterial({
+  uniforms, transparent: true, depthWrite: false,
+  vertexShader: `uniform float uYMin, uYMax, uScale; varying float vIn;
+    void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vIn = step(uYMin, position.y) * step(position.y, uYMax);
+      gl_Position = projectionMatrix * mv; gl_PointSize = vIn * clamp(0.9 * uScale / -mv.z, 2.0, 5.0); }`,
+  fragmentShader: `varying float vIn; void main(){ if (vIn < 0.5) discard; float d = length(gl_PointCoord - 0.5);
+      if (d > 0.5) discard; gl_FragColor = vec4(0.62, 0.7, 0.75, 0.7); }`,
+});
+const glowMat = new THREE.ShaderMaterial({
+  uniforms, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+  vertexShader: `attribute float aRel; uniform float uYMin, uYMax, uScale; varying float vRel; varying float vIn;
+    void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vRel = aRel;
+      vIn = step(uYMin, position.y) * step(position.y, uYMax) * step(0.0001, aRel);
+      gl_Position = projectionMatrix * mv; float meters = 2.0 + 9.0 * sqrt(aRel);
+      gl_PointSize = vIn * clamp(meters * uScale / -mv.z, 7.0 + 14.0 * sqrt(aRel), 110.0); }`,
+  fragmentShader: `varying float vRel; varying float vIn; void main(){ if (vIn < 0.5) discard;
+      float d = length(gl_PointCoord - 0.5) * 2.0; if (d > 1.0) discard;
+      float halo = exp(-d * d * 3.5) * (1.0 - d); float core = smoothstep(0.32, 0.0, d);
+      vec3 glow = vec3(1.0, 0.54, 0.16); vec3 hot = vec3(1.0, 0.86, 0.55);
+      float a = 0.35 + 0.65 * sqrt(vRel);
+      gl_FragColor = vec4(mix(glow, hot, core) * (halo * a + core * 0.9), 1.0); }`,
+});
+
+const contMat = new THREE.ShaderMaterial({
+  uniforms, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+  vertexShader: `attribute float aRel; uniform float uYMin, uYMax, uScale; varying float vRel; varying float vIn;
+    void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vRel = aRel;
+      vIn = step(uYMin, position.y) * step(position.y, uYMax);
+      gl_Position = projectionMatrix * mv; float meters = 2.5 + 8.0 * sqrt(aRel);
+      gl_PointSize = vIn * clamp(meters * uScale / -mv.z, 5.0, 90.0); }`,
+  fragmentShader: `varying float vRel; varying float vIn; void main(){ if (vIn < 0.5) discard;
+      vec2 q = abs(gl_PointCoord - 0.5) * 2.0; float d = q.x + q.y; if (d > 1.0) discard;
+      float edge = smoothstep(1.0, 0.8, d) - smoothstep(0.75, 0.55, d) * (1.0 - step(0.0001, vRel));
+      float fill = step(0.0001, vRel) * exp(-d * d * 3.0) * (0.35 + 0.65 * sqrt(vRel));
+      gl_FragColor = vec4(vec3(0.44, 0.72, 0.79) * (edge * 0.6 + fill), 1.0); }`,
+});
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  uniforms.uScale.value = h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+}
+new ResizeObserver(resize).observe(stage);
+
+// ---------- data ----------
+async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
+function topCat(c) { if (TOP_OF[c]) return TOP_OF[c]; let x = c; while (CATS[x] && CATS[x][1]) x = CATS[x][1]; return (TOP_OF[c] = x); }
+
+function buildCatSelect() {
+  const s = $("cat"); const tops = {};
+  for (const [id, [name, parent]] of Object.entries(CATS)) { if (!parent && name) tops[id] = { name, subs: [] }; }
+  for (const [id, [name, parent]] of Object.entries(CATS)) { if (parent && tops[parent] && name) tops[parent].subs.push({ id, name }); }
+  let html = `<option value="">All loot types</option>`;
+  for (const [id, t] of Object.entries(tops).sort((a, b) => a[1].name.localeCompare(b[1].name))) {
+    html += `<option value="${id}">${esc(t.name)}</option>`;
+    for (const sub of t.subs.sort((a, b) => a.name.localeCompare(b.name))) html += `<option value="${sub.id}">&nbsp;&nbsp;${esc(sub.name)}</option>`;
+  }
+  s.innerHTML = html;
+}
+function inCat(tpl, cat) {
+  if (!cat) return true; let c = ITEMS[tpl]?.[2];
+  while (c) { if (c === cat) return true; c = CATS[c]?.[1]; } return false;
+}
+
+async function loadMap(id) {
+  $("loading").hidden = false; $("loading").textContent = "Loading spawn data";
+  if (!cache[id]) {
+    const d = await getJSON(`data/${id}.json`);
+    d.byPoint = d.points.map(() => []);
+    d.expected = {};
+    for (const [tpl, list] of Object.entries(d.entries)) {
+      let e = 0; for (const [i, c] of list) { d.byPoint[i].push([tpl, c]); e += c; }
+      d.expected[tpl] = e;
+    }
+    for (const arr of d.byPoint) arr.sort((a, b) => b[1] - a[1]);
+    placePoints(d);
+    cache[id] = d;
+  }
+  map = cache[id];
+  buildPoints();
+  setupSlice();
+  frame();
+  contData = null; if (contPts) { scene.remove(contPts); contPts.geometry.dispose(); contPts = null; }
+  loadModel(id);
+  loadContainers(id);
+  $("loading").hidden = true;
+  refresh();
+}
+
+function placePoints(d) {
+  let ymin = Infinity, ymax = -Infinity;
+  const pos = new Float32Array(d.points.length * 3);
+  d.points.forEach((p, i) => { const [x, y, z] = toWorld(p[0], p[1], p[2]); pos.set([x, y, z], i * 3); ymin = Math.min(ymin, y); ymax = Math.max(ymax, y); });
+  d.pos = pos; d.ymin = Math.floor(ymin); d.ymax = Math.ceil(ymax); d.axis = { ...AXIS };
+}
+
+function buildPoints() {
+  for (const o of [basePts, glowPts]) if (o) { scene.remove(o); o.geometry.dispose(); }
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(map.pos, 3));
+  basePts = new THREE.Points(g, baseMat); scene.add(basePts);
+  const g2 = new THREE.BufferGeometry(); g2.setAttribute("position", new THREE.BufferAttribute(map.pos, 3));
+  g2.setAttribute("aRel", new THREE.BufferAttribute(new Float32Array(map.points.length), 1));
+  glowPts = new THREE.Points(g2, glowMat); glowPts.renderOrder = 2; scene.add(glowPts);
+}
+
+function frame() {
+  // frame the bulk of the spots (2nd-98th percentile), so a few stray spots don't shrink the map
+  const n = map.points.length, xs = [], ys = [], zs = [];
+  for (let i = 0; i < n; i++) { xs.push(map.pos[i * 3]); ys.push(map.pos[i * 3 + 1]); zs.push(map.pos[i * 3 + 2]); }
+  const q = (a, t) => { const b = [...a].sort((u, v) => u - v); return b[Math.min(b.length - 1, Math.max(0, Math.floor(t * b.length)))]; };
+  const box = new THREE.Box3(new THREE.Vector3(q(xs, .02), q(ys, .01), q(zs, .02)), new THREE.Vector3(q(xs, .98), q(ys, .99), q(zs, .98)));
+  const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
+  const span = Math.max(s.x, s.z, 40);
+  controls.target.copy(c);
+  camera.position.set(c.x + span * 0.3, c.y + span * 0.6, c.z + span * 0.55);
+  camera.near = Math.max(0.3, span / 3000); camera.far = span * 8; camera.updateProjectionMatrix();
+  scene.fog.density = 0.35 / span;
+  if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
+  grid = new THREE.GridHelper(Math.ceil(span * 1.3 / 50) * 50, Math.ceil(span * 1.3 / 50), 0x26313a, 0x182027);
+  grid.position.set(c.x, box.min.y - 0.5, c.z); grid.material.transparent = true; grid.material.opacity = 0.6;
+  scene.add(grid);
+  controls.update();
+}
+
+async function loadModel(id) {
+  if (modelRoot) { scene.remove(modelRoot); modelRoot = null; }
+  hud(id, "checking");
+  try {
+    const mid = MODEL_OF[id] || id;
+    const head = await fetch(`maps/${mid}.glb`, { method: "HEAD" });
+    if (!head.ok) { hud(id, "missing"); return; }
+    const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
+    hud(id, "loading");
+    const gltf = await loader.loadAsync(`maps/${mid}.glb`);
+    if (map.id !== id) return;
+    modelRoot = gltf.scene;
+    // The exporter leaves two markers at Unity (100,0,0) and (0,0,100); match the spawn points to the model's axes
+    modelRoot.updateMatrixWorld(true);
+    const mx = modelRoot.getObjectByName("AtlasAxisX"), mz = modelRoot.getObjectByName("AtlasAxisZ");
+    if (mx && mz) {
+      const ax = mx.getWorldPosition(new THREE.Vector3()), az = mz.getWorldPosition(new THREE.Vector3());
+      const next = { x: Math.sign(ax.x) || 1, z: Math.sign(az.z) || 1 };
+      if (next.x !== AXIS.x || next.z !== AXIS.z) {
+        AXIS = next;
+        for (const d of Object.values(cache)) placePoints(d);
+        buildPoints(); setupSlice(); if (contData) buildContainers(); refresh();
+      }
+    }
+    modelRoot.traverse((o) => { if (o.isMesh) { o.material.side = THREE.FrontSide; } });
+    scene.add(modelRoot); hud(id, "ok");
+  } catch { hud(id, "missing"); }
+}
+async function loadContainers(id) {
+  try {
+    const r = await fetch(`maps/${MODEL_OF[id] || id}-containers.json`);
+    if (!r.ok) return;
+    const list = await r.json();
+    if (map.id !== id) return;
+    contData = list.filter((c) => map.containers.ids[c.id]);
+    buildContainers(); refresh();
+  } catch { /* no container file yet */ }
+}
+function buildContainers() {
+  if (contPts) { scene.remove(contPts); contPts.geometry.dispose(); }
+  const pos = new Float32Array(contData.length * 3);
+  contData.forEach((c, i) => pos.set(toWorld(c.x, c.y, c.z), i * 3));
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("aRel", new THREE.BufferAttribute(new Float32Array(contData.length), 1));
+  contPts = new THREE.Points(g, contMat); contPts.renderOrder = 3; scene.add(contPts);
+}
+
+function hud(id, state) {
+  const name = map?.name || id;
+  const model = { ok: "", checking: "", loading: `<span class="badge">Loading map model</span>`,
+    missing: `<span class="badge warn">Map model not exported yet · showing spawn points only</span>` }[state];
+  $("hud").innerHTML = `<span class="badge"><strong>${esc(name)}</strong> · ${map ? map.points.length.toLocaleString() : ""} loose-loot spots</span>${model}`;
+}
+
+// ---------- selection ----------
+function filterState() { return { q: $("q").value.trim().toLowerCase(), cat: $("cat").value, min: +$("price").value }; }
+function candidates() {
+  const f = filterState(); const out = [];
+  for (const [tpl, e] of Object.entries(map.expected)) {
+    const m = ITEMS[tpl]; if (!m) continue;
+    if (f.q && !(m[0].toLowerCase().includes(f.q) || m[1].toLowerCase().includes(f.q))) continue;
+    if (!inCat(tpl, f.cat)) continue;
+    if (m[3] < f.min) continue;
+    if (!f.q && !f.cat && QUEST_CATS.has(topCat(m[2]))) continue; // quest pickups only show when asked for
+    out.push([tpl, e]);
+  }
+  return out.sort((a, b) => b[1] - a[1]);
+}
+
+function refresh() {
+  const cand = candidates();
+  if (sel.tpl && !map.expected[sel.tpl]) sel.tpl = null;
+  const active = sel.tpl ? [[sel.tpl, map.expected[sel.tpl]]] : cand;
+  const set = new Set(active.map((a) => a[0]));
+  chanceAt = new Float32Array(map.points.length);
+  map.byPoint.forEach((arr, i) => {
+    let miss = 1; for (const [tpl, c] of arr) if (set.has(tpl)) miss *= 1 - c;
+    chanceAt[i] = 1 - miss;
+  });
+  let cmax = 0; for (const v of chanceAt) cmax = Math.max(cmax, v);
+  const rel = glowPts.geometry.attributes.aRel;
+  for (let i = 0; i < chanceAt.length; i++) rel.array[i] = cmax > 0 ? chanceAt[i] / cmax : 0;
+  rel.needsUpdate = true;
+  contChance = null;
+  if (contPts) {
+    const odds = map.containers.odds; contChance = new Float32Array(contData.length);
+    contData.forEach((c, i) => {
+      const [tpl, spawn] = map.containers.ids[c.id]; const o = odds[tpl] || {};
+      let miss = 1; for (const t of set) if (o[t]) miss *= 1 - o[t];
+      contChance[i] = spawn * (1 - miss);
+    });
+    let m2 = 0; for (const v of contChance) m2 = Math.max(m2, v);
+    const ra = contPts.geometry.attributes.aRel;
+    for (let i = 0; i < contChance.length; i++) ra.array[i] = m2 > 0 ? contChance[i] / m2 : 0;
+    ra.needsUpdate = true;
+  }
+  computeHotspots();
+  renderSelection(active, cand);
+  renderList(cand);
+  renderContainers(set);
+}
+
+function renderSelection(active, cand) {
+  const spots = chanceAt.reduce((n, v) => n + (v > 0 ? 1 : 0), 0);
+  const total = active.reduce((s, a) => s + a[1], 0) + (contChance ? contChance.reduce((a, b) => a + b, 0) : 0);
+  let best = 0; for (const v of chanceAt) best = Math.max(best, v);
+  const f = filterState();
+  let name, sub;
+  if (sel.tpl) {
+    const m = ITEMS[sel.tpl]; name = m[0];
+    sub = `${CATS[m[2]]?.[0] || "Other"} · handbook ${fmtRub(m[3])}`;
+  } else {
+    const catName = f.cat ? CATS[f.cat][0] : "All loot";
+    name = `${catName}${f.min ? ` worth ${fmtRub(f.min)}+` : ""}${f.q ? ` matching “${esc($("q").value.trim())}”` : ""}`;
+    sub = `${cand.length.toLocaleString()} item types spawn loose on this map`;
+  }
+  $("selection").innerHTML = `
+    <div class="sel-head"><div><div class="sel-name">${esc(name)}</div><div class="sel-sub">${sub}</div></div>
+      ${sel.tpl ? `<button class="clear" id="back">← All matches</button>` : ""}</div>
+    <div class="stats">
+      <div class="stat"><b>${fmtExp(total)}</b><span>expected per raid${contChance ? ", incl. containers" : " (loose)"}</span></div>
+      <div class="stat"><b>${spots.toLocaleString()}</b><span>possible spots</span></div>
+      <div class="stat"><b>${fmtPct(best)}</b><span>best single spot</span></div>
+    </div>`;
+  $("back")?.addEventListener("click", () => { sel.tpl = null; refresh(); });
+}
+
+function renderList(cand) {
+  $("list-label").textContent = sel.tpl ? "Other matches" : "Items, most common first";
+  if (!cand.length) { $("list").innerHTML = `<p class="empty">Nothing matches on this map. Try another loot type or a lower value.</p>`; return; }
+  const top = cand.slice(0, 60), max = top[0][1] || 1;
+  $("list").innerHTML = top.map(([tpl, e]) => {
+    const m = ITEMS[tpl];
+    return `<button class="item" data-tpl="${tpl}" aria-current="${sel.tpl === tpl}">
+      <span class="n">${esc(m[0])}</span><span class="e">${fmtExp(e)}</span>
+      <span class="bar"><i style="width:${Math.max(2, (e / max) * 100)}%"></i></span>
+      <span class="m">${esc(CATS[m[2]]?.[0] || "Other")} · ${fmtRub(m[3])} · ${map.entries[tpl].length} spots</span></button>`;
+  }).join("") + (cand.length > 60 ? `<p class="empty">${cand.length - 60} more. Search to narrow.</p>` : "");
+}
+$("list").addEventListener("click", (e) => { const b = e.target.closest(".item"); if (!b) return; sel.tpl = b.dataset.tpl === sel.tpl ? null : b.dataset.tpl; refresh(); });
+
+function renderContainers(set) {
+  const { count, odds } = map.containers; const rows = [];
+  for (const [ctpl, o] of Object.entries(odds)) {
+    let miss = 1, any = false; for (const tpl of set) { const p = o[tpl]; if (p) { miss *= 1 - p; any = true; } }
+    if (any && count[ctpl]) rows.push([ctpl, 1 - miss, count[ctpl]]);
+  }
+  rows.sort((a, b) => b[1] * b[2] - a[1] * a[2]);
+  $("containers").innerHTML = rows.length
+    ? rows.slice(0, 8).map(([c, p, n]) => `<div class="cont-row"><span class="n">${esc(ITEMS[c]?.[0] || "Container")}</span><span class="c">${n} on map</span><span class="p">${fmtPct(p)}</span></div>`).join("")
+      + `<p class="note">Chance per container you open. Not every container spawns each raid. ${contPts ? "Containers show as blue diamonds on the map." : "They'll appear on the map once the map export runs."}</p>`
+    : `<p class="empty">None of the matching items spawn in containers here.</p>`;
+}
+
+// ---------- hotspots ----------
+let hotspots = [];
+function computeHotspots() {
+  const cell = Math.max(10, (map.ymax - map.ymin) > 30 ? 12 : 10), floor = 3.5;
+  const cells = new Map();
+  for (let i = 0; i < chanceAt.length; i++) {
+    const c = chanceAt[i]; if (c <= 0) continue;
+    const x = map.pos[i * 3], y = map.pos[i * 3 + 1], z = map.pos[i * 3 + 2];
+    if (y < uniforms.uYMin.value || y > uniforms.uYMax.value) continue;
+    const k = `${Math.floor(x / cell)},${Math.floor(y / floor)},${Math.floor(z / cell)}`;
+    const h = cells.get(k) || { s: 0, x: 0, y: 0, z: 0 };
+    h.s += c; h.x += x * c; h.y += y * c; h.z += z * c; cells.set(k, h);
+  }
+  const all = [...cells.values()].sort((a, b) => b.s - a.s);
+  hotspots = [];
+  for (const h of all) {
+    const p = new THREE.Vector3(h.x / h.s, h.y / h.s + 1.5, h.z / h.s);
+    if (hotspots.some((o) => o.p.distanceTo(p) < cell * 2.5)) continue;
+    hotspots.push({ p, s: h.s }); if (hotspots.length === 5) break;
+  }
+  const total = chanceAt.reduce((a, b) => a + b, 0);
+  if (total < 0.02) hotspots = [];
+  $("labels").innerHTML = hotspots.map((h, i) => `<div class="pin" data-i="${i}"><i>${i + 1}</i>${fmtExp(h.s)} / raid</div>`).join("");
+}
+
+// ---------- floor slice ----------
+function setupSlice() {
+  for (const id of ["ymin", "ymax"]) { const el = $(id); el.min = map.ymin; el.max = map.ymax; }
+  $("ymin").value = map.ymin; $("ymax").value = map.ymax; applySlice();
+}
+function applySlice() {
+  let lo = +$("ymin").value, hi = +$("ymax").value;
+  if (lo > hi) { if (document.activeElement === $("ymin")) $("ymax").value = hi = lo; else $("ymin").value = lo = hi; }
+  uniforms.uYMin.value = lo - 0.01; uniforms.uYMax.value = hi + 0.01;
+  $("ymin-o").textContent = lo.toFixed(1) + " m"; $("ymax-o").textContent = hi.toFixed(1) + " m";
+}
+for (const id of ["ymin", "ymax"]) $(id).addEventListener("input", () => { applySlice(); computeHotspots(); });
+
+// ---------- hover ----------
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+let hoverI = -1;
+canvas.addEventListener("pointermove", (ev) => {
+  if (!map || ev.buttons) { $("tip").hidden = true; return; }
+  const r = canvas.getBoundingClientRect();
+  mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  ray.params.Points.threshold = camera.position.distanceTo(controls.target) * 0.012;
+  const hits = ray.intersectObject(basePts).filter((h) => { const y = map.pos[h.index * 3 + 1]; return y >= uniforms.uYMin.value && y <= uniforms.uYMax.value; });
+  hits.sort((a, b) => (chanceAt[b.index] > 0) - (chanceAt[a.index] > 0) || a.distanceToRay - b.distanceToRay);
+  const h = hits[0];
+  if (!h) { $("tip").hidden = true; hoverI = -1; return; }
+  hoverI = h.index; showTip(h.index, ev.clientX - r.left, ev.clientY - r.top, r);
+});
+canvas.addEventListener("pointerleave", () => { $("tip").hidden = true; });
+function showTip(i, x, y, r) {
+  const p = map.points[i], arr = map.byPoint[i];
+  const head = chanceAt[i] > 0 ? `<div class="r"><span>${sel.tpl ? esc(ITEMS[sel.tpl][0]) : "Your selection"}</span><span>${fmtPct(chanceAt[i])}</span></div>` : "";
+  const rows = arr.slice(0, 6).map(([tpl, c]) => `<div class="r dim"><span>${esc(ITEMS[tpl]?.[0] || tpl)}</span><span>${fmtPct(c)}</span></div>`).join("");
+  $("tip").innerHTML = `<h4>Spot · spawns ${fmtPct(p[3])} of raids${p[4] ? " · always" : ""}</h4>${head}${rows}${arr.length > 6 ? `<div class="r dim"><span>${arr.length - 6} other items</span><span></span></div>` : ""}`;
+  const t = $("tip"); t.hidden = false;
+  const w = t.offsetWidth, hh = t.offsetHeight;
+  t.style.left = Math.min(x + 14, r.width - w - 8) + "px"; t.style.top = Math.min(y + 14, r.height - hh - 8) + "px";
+}
+
+// ---------- map picker + routing ----------
+function buildMapButtons() {
+  $("maps").innerHTML = GROUPS.map((g, gi) => g.todo
+    ? `<button class="map-btn" disabled title="Streets is on the to-do list">${g.name}<span class="tag">To do</span></button>`
+    : `<button class="map-btn" data-g="${gi}" aria-pressed="false">${g.name}</button>`).join("");
+  $("maps").addEventListener("click", (e) => { const b = e.target.closest(".map-btn[data-g]"); if (!b) return; go(GROUPS[+b.dataset.g].ids[0]); });
+}
+function syncPicker(id) {
+  const gi = GROUPS.findIndex((g) => g.ids.includes(id));
+  document.querySelectorAll(".map-btn[data-g]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.g === gi)));
+  const g = GROUPS[gi], v = $("variants");
+  v.hidden = !g.vlabels;
+  if (g.vlabels) v.innerHTML = g.ids.map((mid, i) => `<button class="chip" data-id="${mid}" aria-pressed="${mid === id}">${g.vlabels[i]}</button>`).join("");
+}
+$("variants").addEventListener("click", (e) => { const b = e.target.closest(".chip"); if (b) go(b.dataset.id); });
+function go(id) { const slug = SLUG[id]; if (location.hash.slice(1) !== slug) location.hash = slug; else route(); }
+function route() {
+  const slug = location.hash.slice(1);
+  let id = Object.keys(SLUG).find((k) => SLUG[k] === slug);
+  if (!id || id === "tarkovstreets") id = "bigmap";
+  syncPicker(id);
+  if (map?.id !== id) loadMap(id).catch((err) => { $("loading").hidden = false; $("loading").textContent = "Could not load this map's data"; console.error(err); });
+}
+addEventListener("hashchange", route);
+
+let qTimer;
+$("q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(() => { sel.tpl = null; refresh(); }, 120); });
+$("cat").addEventListener("change", () => { sel.tpl = null; refresh(); });
+$("price").addEventListener("change", () => { sel.tpl = null; refresh(); });
+
+// ---------- loop ----------
+const v3 = new THREE.Vector3();
+function tick() {
+  controls.update();
+  renderer.render(scene, camera);
+  const w = stage.clientWidth, h = stage.clientHeight;
+  const placed = [];
+  document.querySelectorAll(".pin").forEach((el) => {
+    const hs = hotspots[+el.dataset.i]; if (!hs) return;
+    v3.copy(hs.p).project(camera);
+    const x = ((v3.x + 1) / 2) * w, y = ((1 - v3.y) / 2) * h;
+    const clash = placed.some(([px, py]) => Math.abs(px - x) < 110 && Math.abs(py - y) < 30);
+    const vis = v3.z < 1 && Math.abs(v3.x) < 1.1 && Math.abs(v3.y) < 1.1 && !clash;
+    el.style.display = vis ? "" : "none";
+    if (vis) placed.push([x, y]);
+    el.style.left = x + "px"; el.style.top = y + "px";
+  });
+  requestAnimationFrame(tick);
+}
+
+// ---------- boot ----------
+(async () => {
+  resize();
+  INDEX = await getJSON("data/index.json");
+  ITEMS = INDEX.items; CATS = INDEX.categories;
+  buildCatSelect(); buildMapButtons();
+  $("about").innerHTML = `<b>How the odds work.</b> Each spot's chance simulates SPT 4.1's loose-loot draw 6,000 times with the pack's loot amount (0.7× SPT's default). Container chances come straight from SPT 4.1.
+    <b>Data:</b> loose-loot spots from a public copy of SPT's database (game version 0.16.8). They match your server closely but not exactly until your server's own files are loaded. Mod-added items (Rare Collectibles) aren't included.`;
+  tick();
+  route();
+})().catch((e) => { $("loading").textContent = "Could not load the loot data"; console.error(e); });
+</script>
+</body>
+</html>
