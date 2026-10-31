@@ -4,7 +4,7 @@ Where loot spawns on every map of our SPT server, and how likely it is each raid
 
 **Open it:** https://wowthisworkshuh.github.io/raid-loot-atlas/
 
-Pick a map, search an item (or pick a loot type and a minimum value), and the spots light up: the brighter and bigger the glow, the better the odds. The numbered pins are the five best areas. Hover a dot to see everything that can spawn there. Extracts (PMC, Scav, both) and transits show as colored markers, with place names on the buildings; toggle them under "Show on map". On Factory, Labs, Interchange, Ground Zero and Reserve, the floor buttons at the bottom of the map show one floor at a time: roofs and higher floors are cut away and only that floor's loot, extracts and names show. Each extract pillar has a dot at the extract's own height. The Height range sliders do the same for any map by hand.
+Loot search and results are on the left; map controls (map, floors, what to show, height range) are on the right. Pick a map, search an item (or pick a loot type and a minimum value), and the spots light up: the brighter and bigger the glow, the better the odds. The numbered pins are the five best areas. Hover a dot to see everything that can spawn there. Extracts (PMC, Scav, both) and transits show as colored markers, with place names on the buildings; toggle them, and the loot glow and hotspot pins, under "Show on map". On Factory, Labs, Interchange, Ground Zero and Reserve, the floor buttons at the bottom of the map show one floor at a time: roofs and higher floors are cut away and only that floor's loot, extracts and names show. Each extract pillar has a dot at the extract's own height. The Height range sliders do the same for any map by hand.
 
 ## The map models
 
