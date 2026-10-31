@@ -37,7 +37,10 @@ jobs:
         run: |
           set -o pipefail
           dotnet build kit/MapDump/SurvivalPack.MapDump.csproj -c Release "-p:SptPath=$SPT_REF" -nologo -v:n 2>&1 | tee build.log || {
-            grep -E "MSB3245|MSB3243|could not be resolved|HintPath|Primary reference" build.log | sort -u | head -15 | sed 's/^/::notice::/'
+            grep -A4 'Primary reference "UnityEngine.CoreModule"' build.log | head -8 | sed 's/^ */::notice::/'
+            grep -E "warning (MSB|CS1701|CS1702)|Resolved file path|nuget|NU1" build.log | sort -u | head -12 | sed 's/^ */::notice::/'
+            head -c 300 "$SPT_REF/EscapeFromTarkov_Data/Managed/UnityEngine.CoreModule.dll" | od -c | head -3 | sed 's/^/::notice::/'
+            ls -la "$SPT_REF/EscapeFromTarkov_Data/Managed/UnityEngine.CoreModule.dll" | sed 's/^/::notice::/'
             exit 1; }
       - name: Publish release
         env:
