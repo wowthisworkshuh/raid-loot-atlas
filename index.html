@@ -142,10 +142,15 @@ select { width: 100%; background: var(--raise); border: 1px solid var(--line); b
   font-size: 12px; max-width: 280px; min-width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
 }
 .tip h4 { margin: 0 0 6px; font-family: var(--font-display); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
-.tip .r { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 2px 0; }
+.tip .line { color: var(--fg); margin: 0 0 8px; }
+.tip .line b { color: var(--glow); font-variant-numeric: tabular-nums; }
+.tip .r { display: grid; grid-template-columns: minmax(0, 1fr) 56px 64px; gap: 8px; padding: 2px 0; color: var(--muted); }
 .tip .r span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tip .r span:last-child { font-variant-numeric: tabular-nums; color: var(--glow); }
-.tip .r.dim span:last-child { color: var(--muted); }
+.tip .r span:not(:first-child) { font-variant-numeric: tabular-nums; text-align: right; }
+.tip .r.th { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 2px; }
+.tip .r.hit { color: var(--glow); }
+.tip .r.hit span:first-child { color: var(--fg); }
+.tip { max-width: 320px; }
 .marks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .place {
   position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font-family: var(--font-display); font-weight: 600;
@@ -312,6 +317,7 @@ const MODEL_OF = { factory4_night: "factory4_day", sandbox_high: "sandbox" };
 
 const $ = (id) => document.getElementById(id);
 const fmtPct = (p) => p >= 0.995 ? "100%" : p >= 0.1 ? Math.round(p * 100) + "%" : p >= 0.01 ? (p * 100).toFixed(1) + "%" : p > 0 ? (p * 100).toFixed(2) + "%" : "0%";
+const fmtPer = (e) => e >= 1 ? `${e >= 10 ? e.toFixed(0) : e.toFixed(1)} per raid` : `${fmtPct(e)} per raid`;
 const fmtExp = (e) => e >= 10 ? e.toFixed(0) : e >= 1 ? e.toFixed(1) : e >= 0.01 ? e.toFixed(2) : e > 0 ? "<0.01" : "0";
 const fmtRub = (r) => r >= 1e6 ? "₽" + (r / 1e6).toFixed(1) + "M" : r >= 1e3 ? "₽" + Math.round(r / 1e3) + "k" : "₽" + r;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -321,7 +327,8 @@ const QUEST_CATS = new Set(["5b619f1a86f77450a702a6f3", "quest"]); // Task items
 let map = null;            // current map data
 let sel = { tpl: null };   // selected item, or null for the filter view
 let chanceAt = null;       // Float32Array: chance of the current selection at each point
-let contChance = null;     // same for placed containers (per raid: container spawns x item inside)
+let contChance = null;
+let selSet = new Set();    // item tpls the glow is showing     // same for placed containers (per raid: container spawns x item inside)
 const cache = {};
 
 // ---------- three.js scene ----------
@@ -821,6 +828,7 @@ function refresh() {
   if (sel.tpl && !map.expected[sel.tpl]) sel.tpl = null;
   const active = sel.tpl ? [[sel.tpl, map.expected[sel.tpl]]] : cand;
   const set = new Set(active.map((a) => a[0]));
+  selSet = set;
   chanceAt = new Float32Array(map.points.length);
   map.byPoint.forEach((arr, i) => {
     let miss = 1; for (const [tpl, c] of arr) if (set.has(tpl)) miss *= 1 - c;
@@ -867,7 +875,7 @@ function renderSelection(active, cand) {
     <div class="sel-head"><div><div class="sel-name">${esc(name)}</div><div class="sel-sub">${sub}</div></div>
       ${sel.tpl ? `<button class="clear" id="back">← All matches</button>` : ""}</div>
     <div class="stats">
-      <div class="stat"><b>${fmtExp(total)}</b><span>expected per raid${contChance ? ", incl. containers" : " (loose)"}</span></div>
+      <div class="stat"><b>${fmtExp(total)}</b><span>expected per raid${contChance ? ", incl. containers" : " (loose)"}${total > 0 && total < 1 ? ` · about 1 in ${Math.round(1 / total)} raids` : ""}</span></div>
       <div class="stat"><b>${spots.toLocaleString()}</b><span>possible spots</span></div>
       <div class="stat"><b>${fmtPct(best)}</b><span>best single spot</span></div>
     </div>`;
@@ -923,7 +931,7 @@ function computeHotspots() {
   }
   const total = chanceAt.reduce((a, b) => a + b, 0);
   if (total < 0.02) hotspots = [];
-  $("labels").innerHTML = hotspots.map((h, i) => `<div class="pin" data-i="${i}"><i>${i + 1}</i>${fmtExp(h.s)} / raid</div>`).join("");
+  $("labels").innerHTML = hotspots.map((h, i) => `<div class="pin" data-i="${i}"><i>${i + 1}</i>${fmtPer(h.s)}</div>`).join("");
 }
 
 // ---------- floors ----------
@@ -997,10 +1005,16 @@ canvas.addEventListener("pointermove", (ev) => {
 });
 canvas.addEventListener("pointerleave", () => { $("tip").hidden = true; });
 function showTip(i, x, y, r) {
-  const p = map.points[i], arr = map.byPoint[i];
-  const head = chanceAt[i] > 0 ? `<div class="r"><span>${sel.tpl ? esc(ITEMS[sel.tpl][0]) : "Your selection"}</span><span>${fmtPct(chanceAt[i])}</span></div>` : "";
-  const rows = arr.slice(0, 6).map(([tpl, c]) => `<div class="r dim"><span>${esc(ITEMS[tpl]?.[0] || tpl)}</span><span>${fmtPct(c)}</span></div>`).join("");
-  $("tip").innerHTML = `<h4>Spot · spawns ${fmtPct(p[3])} of raids${p[4] ? " · always" : ""}</h4>${head}${rows}${arr.length > 6 ? `<div class="r dim"><span>${arr.length - 6} other items</span><span></span></div>` : ""}`;
+  const p = map.points[i], arr = map.byPoint[i], has = p[3];
+  // per raid = has loot x share; "if loot" = the share: which item it is when the spot has loot
+  const top = arr.slice(0, 6), extra = arr.slice(6).filter(([tpl]) => selSet.has(tpl)).slice(0, 2);
+  const row = ([tpl, c]) => `<div class="r${selSet.has(tpl) && chanceAt[i] > 0 ? " hit" : ""}"><span>${esc(ITEMS[tpl]?.[0] || tpl)}</span><span>${fmtPct(has > 0 ? c / has : 0)}</span><span>${fmtPct(c)}</span></div>`;
+  const rest = arr.length - top.length - extra.length;
+  const line = has >= 0.995 ? "Has loot <b>every raid</b>" : `Has loot in <b>${fmtPct(has)}</b> of raids${has > 0 ? ` (about 1 in ${Math.max(1, Math.round(1 / has))})` : ""}`;
+  const mine = chanceAt[i] > 0 && selSet.size > 1 ? `<p class="line" style="margin:8px 0 0">Anything in your search: <b>${fmtPct(chanceAt[i])}</b> per raid</p>` : "";
+  $("tip").innerHTML = `<h4>Loot spot</h4><p class="line">${line}</p>
+    <div class="r th"><span>Item</span><span>If loot</span><span>Per raid</span></div>
+    ${top.concat(extra).map(row).join("")}${rest > 0 ? `<div class="r"><span>${rest} other item${rest > 1 ? "s" : ""}</span><span></span><span></span></div>` : ""}${mine}`;
   const t = $("tip"); t.hidden = false;
   const w = t.offsetWidth, hh = t.offsetHeight;
   t.style.left = Math.min(x + 14, r.width - w - 8) + "px"; t.style.top = Math.min(y + 14, r.height - hh - 8) + "px";
