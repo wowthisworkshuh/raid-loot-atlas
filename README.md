@@ -27,8 +27,32 @@ Each map is a rough "dev blockout": grey grid boxes like an unfinished Source ma
 | Loose-loot data matched to our server's exact SPT 4.1.6 files | To do: run `kit/collect-server-loot.ps1`, send the zip |
 | Rough 3D blockouts, extracts, transits and place names, 10 maps | Done |
 | Exported map models (real geometry) | Optional: one map at a time, see below |
-| Container positions on the map | To do: comes with each map export |
+| Container positions on the map | To do: comes with the map dump |
+| Loot runs, my keys, locked doors, key values, suggested keys | To do: built on the map dump (plugin ready in kit/MapDump) |
 | **Streets of Tarkov** | **To do** (biggest map; done last) |
+
+## Map dump: walkable areas, locked doors, keys and containers (kit/MapDump)
+
+Loot runs, key values and locked doors need data only the game has. `SurvivalPack.MapDump` is a small BepInEx plugin for your own game (not the server or the headless) that writes it once per map, about 20 seconds after a raid loads:
+
+- `navmesh.bin`: the walkable surface the bots use, so routes go round walls, up stairs and never through places you can't reach
+- `doors.json`: every door, trunk and keycard door with the key it needs
+- `containers.json`: every container's position, matched to the server's container ids
+- `exits.json`, `transits.json`: every extract and transit as your SPT version has them
+
+It only reads; nothing in the raid changes.
+
+1. Install the [.NET SDK](https://dotnet.microsoft.com/download) (8 or newer) if you don't have it.
+2. `powershell -ExecutionPolicy Bypass -File kit\MapDump\build-mapdump.ps1 -Spt "C:\SPT"` builds and installs it. If the build fails, send Claude the error lines.
+3. Load into a raid on Factory first. When the box top-left says the dump was written, send the `BepInEx\survivalpack-mapdump\factory4_day` folder to Claude to check the format. Then do the other maps (Customs, Woods, Shoreline, Interchange, Lighthouse, Reserve, Labs, Labyrinth, Ground Zero). Ctrl+F10 writes it again.
+4. `build-mapdump.ps1 -Spt "C:\SPT" -Collect` zips every map's dump to your Desktop. `-Uninstall` removes the plugin.
+
+What it powers, once the dumps are in:
+
+- **Loot run:** pick your spawn and the route goes through the top hotspots for your current loot search in the shortest possible order (solved exactly over the walkable map), then to whichever extract or transit finishes it shortest. Every extract is open from every spawn on this server and raids have no time limit, so only the path matters. The route lists the keys it needs at each locked door.
+- **My keys:** tell the map which keys you have. Doors show green if you have the key and red if you don't, and the loot glow and routes only use rooms you can get into.
+- **Key values:** for each key, what loot sits behind its doors on average per raid and what it's worth. The rooms behind a door are found by closing it on the walk map and seeing which loot gets cut off.
+- **Suggested keys:** the keys per map whose rooms are worth the most.
 
 ## Adding a real map model (kit/)
 
