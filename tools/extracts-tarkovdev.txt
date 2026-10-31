@@ -1,0 +1,161 @@
+# Extracts (p = PMC, s = Scav, - = any) and transits (t), from tarkov.dev's map data
+# (json.tarkov.dev/regular/maps, Oct 31 2026). map|kind|name|x|y|z, rounded to metres.
+F|p|Med Tent Gate|-18|2|-61
+F|p|Cellars|74|-3|-29
+F|s|Gate 3|59|2|61
+F|p|Gate 3|58|3|63
+F|p|Smugglers' Passage|48|-2|-29
+F|p|Courtyard Gate|24|1|69
+F|s|Camera Bunker Door|-16|-2|40
+F|p|Gate 2|45|1|-53
+F|s|Office Window|18|9|40
+F|p|Gate 0|-64|3|56
+F|t|Woods|24|2|60
+F|t|Customs|17|1|-50
+F|t|The Lab|-27|-3|-43
+C|s|Old Gas Station|311|-2|-175
+C|s|Railroad to Reserve|489|4|221
+C|p|Crossroads|-336|2|-86
+C|s|Administration Gate|665|3|-55
+C|s|Old Road Gate|182|2|214
+C|p|RUAF Roadblock|-10|2|-138
+C|s|RUAF Roadblock|-9|2|-139
+C|s|Sniper Roadblock|15|0|126
+C|s|Factory Shacks|206|4|3
+C|s|Crossroads|-336|2|-86
+C|s|Warehouse 4|342|4|-26
+C|s|Boiler Room Basement (Co-op)|107|-5|-44
+C|p|Railroad Passage (Flare)|141|4|-323
+C|s|Railroad to Port|-149|-1|47
+C|s|Gate Near Medblock|62|3|-174
+C|p|ZB-1013|201|-1|-153
+C|p|ZB-1011|622|-2|-126
+C|s|Railroad to Tarkov|-153|3|-218
+C|s|Reserve Checkpoint|645|2|127
+C|p|Trailer Park|-316|-2|-233
+C|p|Dorms V-Ex|181|-1|213
+C|p|Old Gas Station|310|-2|-174
+C|s|Passage Between Rocks|539|12|200
+C|s|ZB-1011|626|-3|-128
+C|p|Smugglers' Boat|-42|-13|123
+C|s|Trailer Park|-316|3|-232
+C|p|Smugglers' Bunker (ZB-1012)|462|-1|-112
+C|t|Reserve|651|2|125
+C|t|Factory|354|2|-190
+C|t|Interchange|-334|2|-212
+C|t|Shoreline|21|0|140
+W|p|ZB-016|-389|4|11
+W|s|UN Roadblock|-535|1|287
+W|s|Old Railway Depot|-518|11|149
+W|s|Scav House|414|-13|242
+W|s|Eastern Rocks|-509|24|-35
+W|s|Mountain Stash|-210|31|-213
+W|p|Power Line Passage (Flare)|574|-2|-85
+W|p|Outskirts|349|-9|359
+W|p|UN Roadblock|-536|2|287
+W|s|Scav Bunker|220|21|-706
+W|s|RUAF Roadblock|-142|1|422
+W|s|Outskirts|347|-11|360
+W|p|RUAF Gate|-142|-2|448
+W|p|ZB-014|447|-13|57
+W|s|Dead Man's Place|196|-17|259
+W|s|Friendship Bridge (Co-Op)|93|17|-844
+W|s|Boat|177|-21|216
+W|p|Railway Bridge to Tarkov|-730|9|129
+W|p|Northern UN Roadblock|-557|9|-67
+W|p|Bridge V-Ex|-485|16|-504
+W|t|Factory|-362|1|361
+W|t|Reserve|254|-9|363
+W|t|Lighthouse|496|-17|348
+W|t|Customs|-150|1|403
+L|s|Armored Train|6|13|-869
+L|p|Southern Road|-296|12|421
+L|s|Southern Road Landslide|-281|12|421
+L|s|Path to Shoreline|-364|29|-121
+L|p|Mountain Pass|-189|41|-64
+L|p|Passage by the Lake|-377|27|-643
+L|p|Northern Checkpoint|115|12|-989
+L|s|Hideout Under the Landing Stage|133|0|287
+L|s|Scav Hideout at the Grotto|181|1|-486
+L|s|Industrial Zone Gates|-153|12|-794
+L|s|Side Tunnel (Co-Op)|-68|7|318
+L|p|Path to Shoreline|-364|29|-121
+L|t|Shoreline|-338|18|-166
+L|t|Reserve|-293|15|-781
+L|t|Woods|111|7|-963
+L|t|Icebreaker|147|0|-183
+S|p|Climber's Trail|-214|-1|-362
+S|s|Admin Basement|-257|-8|-150
+S|p|Tunnel|376|-56|319
+S|p|Rock Passage|-201|-13|-358
+S|s|Lighthouse|-458|-54|567
+S|s|Smugglers' Path (Co-op)|-729|-26|-255
+S|s|Svetliy Dead End|461|-53|121
+S|p|Path to Lighthouse|449|-45|-255
+S|s|Ruined Road|367|-61|333
+S|p|CCP Temporary|-856|-59|477
+S|s|Road to Customs|-859|-42|0
+S|s|East Wing Gym Entrance|-297|-7|-101
+S|p|Road to Customs|-859|-42|0
+S|p|Railway Bridge|-1025|-61|298
+S|s|Ruined House Fence|478|-52|-67
+S|p|Pier Boat|-336|-66|564
+S|p|Mountain Bunker|-391|-3|-386
+S|p|Road to North V-Ex|-543|-17|-379
+S|p|Cliff Descent|-196|-10|-360
+S|t|Lighthouse|417|-56|-214
+S|t|Terminal|-966|-57|374
+S|t|Labyrinth|-195|-10|-83
+S|t|Icebreaker|-316|-64|526
+R|s|Armored Train|141|-4|-146
+R|s|Heating Pipe|-35|-5|-180
+R|p|Exit to Woods|37|-6|-222
+R|s|Hole in the Wall by the Mountains|-261|-6|49
+R|p|Cliff Descent|-9|21|208
+R|s|Sewer Manhole|40|-5|76
+R|p|D-2|-121|-17|172
+R|s|Checkpoint Fence|62|-4|134
+R|s|Bunker Hermetic Door|62|-5|-191
+R|s|Scav Lands (Co-Op)|-128|-3|-143
+R|s|Depot Hermetic Door|121|-10|-120
+R|t|Customs|-196|-5|-116
+R|t|Woods|216|-6|-202
+R|t|Lighthouse|239|-6|-124
+I|s|Railway Exfil|475|20|-434
+I|p|Saferoom Exfil|-48|23|44
+I|p|Railway Exfil|475|21|-434
+I|p|Emercom Checkpoint|-322|22|267
+I|s|Scav Camp (Co-Op)|-97|18|-73
+I|p|Path to River (Flare)|614|28|71
+I|s|Emercom Checkpoint|-322|24|267
+I|p|Power Station V-Ex|-303|22|-368
+I|p|Hole in the Fence|-220|14|-37
+I|t|Customs|280|23|435
+I|t|Streets of Tarkov|272|24|-454
+LB|p|Hangar Gate|-170|6|-219
+LB|s|Medical Block Elevator|-112|-3|-344
+LB|p|Ventilation Shaft|-145|-2|-397
+LB|s|Cargo Elevator|-112|5|-409
+LB|s|Main Elevator|-283|-3|-335
+LB|p|Parking Gate|-231|6|-458
+LB|p|Sewage Conduit|-123|-4|-258
+LB|t|Streets of Tarkov|-170|1|-421
+G|s|Nakatani Basement Stairs|-16|15|335
+G|s|Scav Checkpoint (Co-op)|25|25|-80
+G|p|Tartowers Sales Office|191|18|133
+G|s|Pinewood Basement (Co-Op)|-114|-3|66
+G|p|Mira Ave (Flare)|218|18|-39
+G|p|UN Roadblock|-528|2|288
+G|s|Emercom Checkpoint|152|25|-97
+G|s|Scav Bunker|220|21|-706
+G|p|Police Cordon V-Ex|-20|24|115
+G|t|Streets of Tarkov|230|17|65
+G2|-|Police Cordon V-Ex|-20|24|115
+G2|-|Emercom Checkpoint|152|25|-97
+G2|-|Scav Checkpoint (Co-op)|25|25|-80
+G2|-|Nakatani Basement Stairs|-16|15|335
+G2|-|Mira Ave (Flare)|218|18|-39
+G2|-|Tartowers Sales Office|191|18|133
+G2|t|Streets of Tarkov|223|16|66
+LY|p|The Way Up|-7|0|40
+LY|p|Ariadne's Path|19|1|1

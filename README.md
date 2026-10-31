@@ -4,7 +4,13 @@ Where loot spawns on every map of our SPT server, and how likely it is each raid
 
 **Open it:** https://wowthisworkshuh.github.io/raid-loot-atlas/
 
-Pick a map, search an item (or pick a loot type and a minimum value), and the spots light up: the brighter and bigger the glow, the better the odds. The numbered pins are the five best areas. Hover a dot to see everything that can spawn there. Use the floor slice to look at one floor of Labs, Interchange or the Labyrinth at a time.
+Pick a map, search an item (or pick a loot type and a minimum value), and the spots light up: the brighter and bigger the glow, the better the odds. The numbered pins are the five best areas. Hover a dot to see everything that can spawn there. Extracts (PMC, Scav, both) and transits show as colored markers, with place names on the buildings; toggle them under "Show on map". Drag the floor slice's High handle down to cut the roofs off and see one floor at a time.
+
+## The map models
+
+Each map is a rough "dev blockout": grey grid boxes like an unfinished Source map. Building outlines, floors, walls, roads, water and rocks come from [tarkov.dev's SVG maps](https://github.com/the-hideout/tarkov-dev-svg-maps) (CC BY-NC-SA 4.0), lined up with tarkov.dev's own map bounds; the orientation for each map was checked by how many loot spots land inside buildings (Labs re-fitted: 79% to 90% of spots inside rooms on the right floor). Heights come from the loot spots themselves: the ground from outdoor spots, building tops and floor levels from the spots inside each outline. The Labyrinth has no outline map, so it's built from its spots alone. Place names, extracts and transits come from tarkov.dev and match live Tarkov, so a few may differ on SPT.
+
+`tools/build_blockouts.py` rebuilds them (needs the SVG repo and tarkov.dev's `src/data/maps.json`). A real map export (below) replaces the blockout for any map that has one.
 
 ## How the odds work
 
@@ -19,11 +25,12 @@ Pick a map, search an item (or pick a loot type and a minimum value), and the sp
 | Loose-loot spots and odds, 10 maps (Factory day and night, Ground Zero both level brackets) | Done |
 | Container loot odds | Done |
 | Loose-loot data matched to our server's exact SPT 4.1.6 files | To do: run `kit/collect-server-loot.ps1`, send the zip |
-| 3D map models | To do: one map at a time, see below |
+| Rough 3D blockouts, extracts, transits and place names, 10 maps | Done |
+| Exported map models (real geometry) | Optional: one map at a time, see below |
 | Container positions on the map | To do: comes with each map export |
 | **Streets of Tarkov** | **To do** (biggest map; done last) |
 
-## Adding a map model (kit/)
+## Adding a real map model (kit/)
 
 You need: the SPT install, [AssetRipper](https://github.com/AssetRipper/AssetRipper/releases), Unity Hub with a Unity editor, and Node.js.
 

@@ -26,6 +26,10 @@
   --glow-ink: #1a0d02;    /* text on glow */
   --cold: #6fb7c9;        /* containers, secondary data */
   --todo: #c9a64a;
+  --exit-pmc: #74c69d;    /* PMC extract */
+  --exit-scav: #b79cff;   /* Scav extract */
+  --exit-any: #e8ecef;    /* both sides */
+  --transit: #7fd1e0;     /* transit to another map */
   --font-display: "Chakra Petch", "Bahnschrift", "DIN Alternate", "Arial Narrow", sans-serif;
   --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
 }
@@ -139,6 +143,22 @@ select { width: 100%; background: var(--raise); border: 1px solid var(--line); b
 .tip .r span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tip .r span:last-child { font-variant-numeric: tabular-nums; color: var(--glow); }
 .tip .r.dim span:last-child { color: var(--muted); }
+.marks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.place {
+  position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font-family: var(--font-display); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .12em; color: var(--fg); opacity: .9; font-size: 11px;
+  text-shadow: 0 0 3px var(--bg), 0 0 6px var(--bg), 0 1px 2px var(--bg);
+}
+.place.big { font-size: 13px; letter-spacing: .14em; }
+.exit {
+  position: absolute; transform: translate(-50%, calc(-100% - 4px)); display: flex; align-items: center; gap: 5px; white-space: nowrap;
+  background: rgba(10, 13, 15, .86); border: 1px solid var(--line); border-left: 3px solid var(--c); border-radius: 2px;
+  padding: 2px 7px 2px 5px; font-size: 11px; color: var(--fg);
+}
+.exit b { font-family: var(--font-display); font-weight: 600; font-size: 9px; letter-spacing: .12em; color: var(--c); }
+.toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+.toggles .chip { display: inline-flex; align-items: center; gap: 6px; }
+.toggles .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); display: inline-block; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-family: var(--font-display); letter-spacing: .12em; text-transform: uppercase; font-size: 13px; pointer-events: none; }
 
 @media (max-width: 760px) {
@@ -168,6 +188,16 @@ body { margin: 0; }
         <p class="label">Map</p>
         <div class="maps" id="maps"></div>
         <div class="variants" id="variants" hidden></div>
+      </section>
+
+      <section>
+        <p class="label">Show on map</p>
+        <div class="toggles" id="toggles">
+          <button class="chip" data-t="names" aria-pressed="true" style="--c: var(--fg)"><i></i>Place names</button>
+          <button class="chip" data-t="p" aria-pressed="true" style="--c: var(--exit-pmc)"><i></i>PMC extracts</button>
+          <button class="chip" data-t="s" aria-pressed="true" style="--c: var(--exit-scav)"><i></i>Scav extracts</button>
+          <button class="chip" data-t="t" aria-pressed="true" style="--c: var(--transit)"><i></i>Transits</button>
+        </div>
       </section>
 
       <section class="field">
@@ -214,6 +244,7 @@ body { margin: 0; }
 
   <main class="stage" id="stage">
     <canvas id="c"></canvas>
+    <div class="marks" id="marks"></div>
     <div class="labels" id="labels"></div>
     <div class="hud" id="hud"></div>
     <div class="tip" id="tip" hidden></div>
@@ -386,18 +417,18 @@ function buildPoints() {
   glowPts = new THREE.Points(g2, glowMat); glowPts.renderOrder = 2; scene.add(glowPts);
 }
 
-function frame() {
+function frame(given) {
   // frame the bulk of the spots (2nd-98th percentile), so a few stray spots don't shrink the map
   const n = map.points.length, xs = [], ys = [], zs = [];
   for (let i = 0; i < n; i++) { xs.push(map.pos[i * 3]); ys.push(map.pos[i * 3 + 1]); zs.push(map.pos[i * 3 + 2]); }
   const q = (a, t) => { const b = [...a].sort((u, v) => u - v); return b[Math.min(b.length - 1, Math.max(0, Math.floor(t * b.length)))]; };
-  const box = new THREE.Box3(new THREE.Vector3(q(xs, .02), q(ys, .01), q(zs, .02)), new THREE.Vector3(q(xs, .98), q(ys, .99), q(zs, .98)));
+  const box = given || new THREE.Box3(new THREE.Vector3(q(xs, .02), q(ys, .01), q(zs, .02)), new THREE.Vector3(q(xs, .98), q(ys, .99), q(zs, .98)));
   const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
   const span = Math.max(s.x, s.z, 40);
   controls.target.copy(c);
   camera.position.set(c.x + span * 0.3, c.y + span * 0.6, c.z + span * 0.55);
   camera.near = Math.max(0.3, span / 3000); camera.far = span * 8; camera.updateProjectionMatrix();
-  scene.fog.density = 0.35 / span;
+  scene.fog.density = 0.35 / span; devUniforms.uFog.value = 0.45 / span;
   if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
   grid = new THREE.GridHelper(Math.ceil(span * 1.3 / 50) * 50, Math.ceil(span * 1.3 / 50), 0x26313a, 0x182027);
   grid.position.set(c.x, box.min.y - 0.5, c.z); grid.material.transparent = true; grid.material.opacity = 0.6;
@@ -407,11 +438,13 @@ function frame() {
 
 async function loadModel(id) {
   if (modelRoot) { scene.remove(modelRoot); modelRoot = null; }
+  if (blockRoot) { scene.remove(blockRoot); blockRoot.traverse((o) => o.geometry?.dispose()); blockRoot = null; }
+  grid.visible = true; clearMarks();
   hud(id, "checking");
   try {
     const mid = MODEL_OF[id] || id;
     const head = await fetch(`maps/${mid}.glb`, { method: "HEAD" });
-    if (!head.ok) { hud(id, "missing"); return; }
+    if (!head.ok) { loadBlockout(id); return; }
     const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
     hud(id, "loading");
     const gltf = await loader.loadAsync(`maps/${mid}.glb`);
@@ -431,8 +464,213 @@ async function loadModel(id) {
     }
     modelRoot.traverse((o) => { if (o.isMesh) { o.material.side = THREE.FrontSide; } });
     scene.add(modelRoot); hud(id, "ok");
-  } catch { hud(id, "missing"); }
+  } catch { loadBlockout(id); }
 }
+
+// ---------- dev blockout ----------
+// Rough "dev texture" model: grey grid surfaces like an unfinished Source map, built in the browser
+// from maps/<id>-blockout.json (outlines from tarkov.dev's SVG maps, heights from the loot spots).
+const DEV = {
+  ground: [0.30, 0.32, 0.33], bld: [0.56, 0.58, 0.60], roof: [0.70, 0.72, 0.73], slab: [0.62, 0.64, 0.65],
+  wall: [0.50, 0.53, 0.55], room: [0.52, 0.55, 0.57], prop: [0.60, 0.56, 0.50], rock: [0.40, 0.39, 0.36],
+  water: [0.16, 0.25, 0.31], road: [0.22, 0.23, 0.24], dirt: [0.34, 0.30, 0.25], rail: [0.30, 0.24, 0.21],
+  pave: [0.42, 0.44, 0.46], veg: [0.21, 0.27, 0.23], wood: [0.40, 0.33, 0.25], fence: [0.62, 0.64, 0.66], under: [0.45, 0.48, 0.50],
+};
+const devUniforms = { uYMax: uniforms.uYMax, uFog: { value: 0.0006 }, uFogColor: { value: new THREE.Color(0x0b0f12) }, uLight: { value: new THREE.Vector3(-0.45, 0.8, 0.35).normalize() } };
+const devMat = new THREE.ShaderMaterial({
+  uniforms: devUniforms, side: THREE.DoubleSide, vertexColors: true,
+  vertexShader: `attribute float aGrid; attribute float aClip; varying vec3 vW; varying vec3 vN; varying vec3 vC; varying float vG; varying float vClip; varying float vD;
+    void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; vN = normal; vC = color; vG = aGrid; vClip = aClip;
+      vec4 mv = viewMatrix * w; vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform float uYMax; uniform float uFog; uniform vec3 uFogColor; uniform vec3 uLight;
+    varying vec3 vW; varying vec3 vN; varying vec3 vC; varying float vG; varying float vClip; varying float vD;
+    float line(vec2 uv, float s){ vec2 g = uv / s; vec2 w = fwidth(g); vec2 c = abs(fract(g - 0.5) - 0.5) / max(w, 1e-4);
+      float l = 1.0 - min(min(c.x, c.y), 1.0); return l * (1.0 - smoothstep(0.15, 0.5, max(w.x, w.y))); }
+    void main(){
+      if (vClip > 0.5 && vW.y > uYMax + 0.05) discard;
+      vec3 n = normalize(vN); if (!gl_FrontFacing) n = -n;
+      vec3 a = abs(n); vec2 uv = a.y > 0.6 ? vW.xz : (a.x > a.z ? vW.zy : vW.xy);
+      float g = vG * (0.10 * line(uv, 1.0) + 0.22 * line(uv, 4.0));
+      float lit = 0.62 + 0.38 * max(dot(n, uLight), 0.0) + 0.08 * n.y;
+      vec3 col = vC * lit * (1.0 - g);
+      float f = 1.0 - exp(-pow(vD * uFog, 2.0));
+      gl_FragColor = vec4(mix(col, uFogColor, f), 1.0); }`,
+});
+const edgeMat = new THREE.ShaderMaterial({
+  uniforms: devUniforms, transparent: true, depthWrite: false,
+  vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: `uniform float uYMax; varying vec3 vW; void main(){ if (vW.y > uYMax + 0.05) discard; gl_FragColor = vec4(0.06, 0.07, 0.08, 0.55); }`,
+});
+let blockRoot = null;
+const blockCache = {};
+
+class Acc {
+  constructor() { this.p = []; this.c = []; this.g = []; this.k = []; this.e = []; }
+  tri(a, b, c, col, grid = 1, clip = 1) {
+    this.p.push(...a, ...b, ...c);
+    for (let i = 0; i < 3; i++) { this.c.push(...col); this.g.push(grid); this.k.push(clip); }
+  }
+  quad(a, b, c, d, col, grid, clip) { this.tri(a, b, c, col, grid, clip); this.tri(a, c, d, col, grid, clip); }
+  edge(a, b) { this.e.push(...a, ...b); }
+  mesh() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(this.c, 3));
+    g.setAttribute("aGrid", new THREE.Float32BufferAttribute(this.g, 1));
+    g.setAttribute("aClip", new THREE.Float32BufferAttribute(this.k, 1));
+    g.computeVertexNormals();
+    const group = new THREE.Group(); group.add(new THREE.Mesh(g, devMat));
+    if (this.e.length) {
+      const eg = new THREE.BufferGeometry(); eg.setAttribute("position", new THREE.Float32BufferAttribute(this.e, 3));
+      const lines = new THREE.LineSegments(eg, edgeMat); lines.renderOrder = 1; group.add(lines);
+    }
+    return group;
+  }
+}
+
+function buildBlockout(B) {
+  const A = new Acc();
+  const W = (x, z) => [AXIS.x * x, AXIS.z * z];
+  const G = B.ground;
+  const hAt = (x, z) => {
+    if (!G) return 0;
+    const fx = Math.min(Math.max((x - G.x0) / G.dx, 0), G.n - 1.001), fz = Math.min(Math.max((z - G.z0) / G.dz, 0), G.n - 1.001);
+    const i = Math.floor(fz), j = Math.floor(fx), u = fz - i, v = fx - j, h = G.h, n = G.n;
+    return h[i * n + j] * (1 - u) * (1 - v) + h[(i + 1) * n + j] * u * (1 - v) + h[i * n + j + 1] * (1 - u) * v + h[(i + 1) * n + j + 1] * u * v;
+  };
+  const ringOf = (r) => { const out = []; for (let i = 0; i < r.length; i += 2) out.push([r[i], r[i + 1]]); return out; };
+  const tris = (ring) => {
+    const v2 = ring.map(([x, z]) => new THREE.Vector2(...W(x, z)));
+    try { return THREE.ShapeUtils.triangulateShape(v2, []); } catch { return []; }
+  };
+  const P = (x, y, z) => { const [a, b] = W(x, z); return [a, y, b]; };
+
+  if (G) { // terrain grid
+    const n = G.n, col = DEV.ground;
+    for (let i = 0; i < n - 1; i++) for (let j = 0; j < n - 1; j++) {
+      const x0 = G.x0 + j * G.dx, x1 = x0 + G.dx, z0 = G.z0 + i * G.dz, z1 = z0 + G.dz;
+      const h = G.h;
+      A.quad(P(x0, h[i * n + j], z0), P(x1, h[i * n + j + 1], z0), P(x1, h[(i + 1) * n + j + 1], z1), P(x0, h[(i + 1) * n + j], z1), col, 1, 0);
+    }
+  }
+  for (const it of B.items) {
+    const col = DEV[it.k] || DEV[it.t] || DEV.bld;
+    if (it.t === "block" || (it.t === "slab")) {
+      const ring = ringOf(it.r); if (ring.length < 3) continue;
+      const y0 = it.t === "slab" ? it.y - 0.25 : it.b, y1 = it.t === "slab" ? it.y : it.h;
+      const top = it.t === "block" && it.k === "bld" ? DEV.roof : col;
+      for (let i = 0; i < ring.length; i++) {
+        const [ax, az] = ring[i], [bx, bz] = ring[(i + 1) % ring.length];
+        A.quad(P(ax, y0, az), P(bx, y0, bz), P(bx, y1, bz), P(ax, y1, az), col, 1, 1);
+        if (it.t === "block") { A.edge(P(ax, y1, az), P(bx, y1, bz)); }
+      }
+      for (const [a, b, c] of tris(ring)) A.tri(P(...[ring[a][0], y1, ring[a][1]]), P(ring[b][0], y1, ring[b][1]), P(ring[c][0], y1, ring[c][1]), top, 1, 1);
+    } else if (it.t === "flat") {
+      const ring = ringOf(it.r); if (ring.length < 3) continue;
+      const off = it.k === "water" ? 0.05 : it.k === "veg" ? 0.08 : 0.12;
+      for (const [a, b, c] of tris(ring)) {
+        const v = [a, b, c].map((k) => P(ring[k][0], hAt(ring[k][0], ring[k][1]) + off, ring[k][1]));
+        A.tri(v[0], v[1], v[2], col, it.k === "water" ? 0 : 1, 0);
+      }
+    } else if (it.t === "line") {
+      const pts = ringOf(it.p), hw = it.w / 2;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+        const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz) || 1, nx = -dz / L * hw, nz = dx / L * hw;
+        const ya = it.y ?? hAt(ax, az) + 0.18, yb = it.y ?? hAt(bx, bz) + 0.18;
+        A.quad(P(ax + nx, ya, az + nz), P(bx + nx, yb, bz + nz), P(bx - nx, yb, bz - nz), P(ax - nx, ya, az - nz), col, it.k === "rail" ? 0 : 1, it.y != null ? 1 : 0);
+      }
+    } else if (it.t === "fence") {
+      const pts = ringOf(it.p);
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+        const a0 = it.b ?? hAt(ax, az), b0 = it.b ?? hAt(bx, bz);
+        const a1 = it.h ?? a0 + 1.8, b1 = it.h ?? b0 + 1.8;
+        A.quad(P(ax, a0, az), P(bx, b0, bz), P(bx, b1, bz), P(ax, a1, az), col, 1, 1);
+        if (it.k === "room") A.edge(P(ax, a1, az), P(bx, b1, bz));
+      }
+    }
+  }
+  return A.mesh();
+}
+
+async function loadBlockout(id) {
+  const bid = MODEL_OF[id] || id;
+  try {
+    if (!blockCache[bid]) {
+      const r = await fetch(`maps/${bid}-blockout.json`);
+      if (!r.ok) throw new Error("no blockout");
+      blockCache[bid] = await r.json();
+    }
+    if (map.id !== id) return;
+    if (blockRoot) { scene.remove(blockRoot); blockRoot.traverse((o) => o.geometry?.dispose()); }
+    blockRoot = buildBlockout(blockCache[bid]);
+    blockRoot.userData.axis = { ...AXIS };
+    scene.add(blockRoot);
+    buildMarks(blockCache[bid]);
+    grid.visible = !blockCache[bid].ground;
+    if (!blockCache[bid].ground) { // indoor maps: frame the building, not stray spots outside it
+      const box = new THREE.Box3().setFromObject(blockRoot.children[0]);
+      if (!box.isEmpty()) frame(box);
+    }
+    hud(id, "blockout");
+  } catch { grid.visible = true; hud(id, "missing"); }
+}
+
+// ---------- extracts + place names ----------
+const SHOW = { names: true, p: true, s: true, t: true };
+try { Object.assign(SHOW, JSON.parse(localStorage.getItem("atlas-show") || "{}")); } catch {}
+let marks = [], beams = null;
+const EXIT_STYLE = { p: ["PMC", "--exit-pmc", 0x74c69d], s: ["Scav", "--exit-scav", 0xb79cff], a: ["PMC + Scav", "--exit-any", 0xe8ecef], "-": ["Exit", "--exit-any", 0xe8ecef], t: ["Transit", "--transit", 0x7fd1e0] };
+function buildMarks(B) {
+  if (beams) { scene.remove(beams); beams.geometry.dispose(); beams = null; }
+  const box = $("marks"); box.innerHTML = ""; marks = [];
+  const pos = [], col = [];
+  for (const e of B.exits || []) {
+    const [label, cssVar, hex] = EXIT_STYLE[e.k] || EXIT_STYLE["-"];
+    const [x, y, z] = toWorld(e.x, e.y, e.z);
+    const el = document.createElement("div"); el.className = "exit"; el.style.setProperty("--c", `var(${cssVar})`);
+    el.innerHTML = `<b>${e.k === "t" ? "TRANSIT" : label.toUpperCase()}</b>${esc(e.k === "t" ? "to " + e.n : e.n)}`;
+    box.appendChild(el);
+    marks.push({ el, p: new THREE.Vector3(x, y + 9, z), kind: e.k === "a" || e.k === "-" ? "a" : e.k, lo: e.y - 4, hi: e.y + 4, pri: 2 });
+    const c = new THREE.Color(hex); pos.push(x, y - 1, z, x, y + 9, z); col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+  }
+  if (pos.length) {
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    beams = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthTest: false }));
+    beams.renderOrder = 4; scene.add(beams);
+  }
+  for (const l of [...(B.labels || [])].sort((a, b) => (b.s || 60) - (a.s || 60))) {
+    const [x, y, z] = toWorld(l.x, l.y, l.z);
+    const el = document.createElement("div"); el.className = "place" + ((l.s || 60) >= 90 ? " big" : ""); el.textContent = l.n;
+    box.appendChild(el);
+    marks.push({ el, p: new THREE.Vector3(x, y, z), kind: "names", lo: l.lo, hi: l.hi, pri: 1 });
+  }
+  marks.sort((a, b) => b.pri - a.pri);
+  applyToggles();
+}
+function applyToggles() {
+  document.querySelectorAll("#toggles .chip").forEach((b) => b.setAttribute("aria-pressed", String(!!SHOW[b.dataset.t])));
+  if (beams) {
+    const c = beams.geometry.attributes.color; // hide a beam by fading it to the background
+    let i = 0;
+    for (const m of marks) if (m.kind !== "names") {
+      const on = (m.kind === "a" ? SHOW.p || SHOW.s : SHOW[m.kind]);
+      const hex = new THREE.Color((EXIT_STYLE[m.kind === "a" ? "a" : m.kind])[2]);
+      const v = on ? hex : new THREE.Color(0x0b0f12);
+      c.setXYZ(i * 2, v.r, v.g, v.b); c.setXYZ(i * 2 + 1, v.r, v.g, v.b); i++;
+    }
+    c.needsUpdate = true;
+  }
+}
+$("toggles").addEventListener("click", (e) => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  SHOW[b.dataset.t] = !SHOW[b.dataset.t];
+  try { localStorage.setItem("atlas-show", JSON.stringify(SHOW)); } catch {}
+  applyToggles();
+});
+function clearMarks() { $("marks").innerHTML = ""; marks = []; if (beams) { scene.remove(beams); beams.geometry.dispose(); beams = null; } }
+
 async function loadContainers(id) {
   try {
     const r = await fetch(`maps/${MODEL_OF[id] || id}-containers.json`);
@@ -455,7 +693,8 @@ function buildContainers() {
 function hud(id, state) {
   const name = map?.name || id;
   const model = { ok: "", checking: "", loading: `<span class="badge">Loading map model</span>`,
-    missing: `<span class="badge warn">Map model not exported yet · showing spawn points only</span>` }[state];
+    missing: `<span class="badge warn">No map model yet · showing spawn points only</span>`,
+    blockout: `<span class="badge">Rough blockout · outlines from tarkov.dev</span>` }[state];
   $("hud").innerHTML = `<span class="badge"><strong>${esc(name)}</strong> · ${map ? map.points.length.toLocaleString() : ""} loose-loot spots</span>${model}`;
 }
 
@@ -670,6 +909,22 @@ function tick() {
     if (vis) placed.push([x, y]);
     el.style.left = x + "px"; el.style.top = y + "px";
   });
+  const lo = uniforms.uYMin.value, hi = uniforms.uYMax.value;
+  for (const m of marks) {
+    const on = m.kind === "names" ? SHOW.names : m.kind === "a" ? (SHOW.p || SHOW.s) : SHOW[m.kind];
+    let vis = on && m.hi >= lo && m.lo <= hi;
+    if (vis) {
+      v3.copy(m.p).project(camera);
+      vis = v3.z < 1 && Math.abs(v3.x) < 1.05 && Math.abs(v3.y) < 1.05;
+      if (vis) {
+        const x = ((v3.x + 1) / 2) * w, y = ((1 - v3.y) / 2) * h;
+        const half = m.kind === "names" ? 40 : 60;
+        vis = !placed.some(([px, py]) => Math.abs(px - x) < half + 40 && Math.abs(py - y) < 20);
+        if (vis) { placed.push([x, y]); m.el.style.left = x + "px"; m.el.style.top = y + "px"; }
+      }
+    }
+    m.el.hidden = !vis;
+  }
   requestAnimationFrame(tick);
 }
 
@@ -680,7 +935,8 @@ function tick() {
   ITEMS = INDEX.items; CATS = INDEX.categories;
   buildCatSelect(); buildMapButtons();
   $("about").innerHTML = `<b>How the odds work.</b> Each spot's chance simulates SPT 4.1's loose-loot draw 6,000 times with the pack's loot amount (0.7× SPT's default). Container chances come straight from SPT 4.1.
-    <b>Data:</b> loose-loot spots from a public copy of SPT's database (game version 0.16.8). They match your server closely but not exactly until your server's own files are loaded. Mod-added items (Rare Collectibles) aren't included.`;
+    <b>Data:</b> loose-loot spots from a public copy of SPT's database (game version 0.16.8). They match your server closely but not exactly until your server's own files are loaded. Mod-added items (Rare Collectibles) aren't included.
+    <b>Map:</b> a rough blockout built from <a href="https://github.com/the-hideout/tarkov-dev-svg-maps" target="_blank" rel="noopener" style="color:inherit">tarkov.dev's SVG maps</a> (CC BY-NC-SA 4.0), with heights from the loot spots. Place names, extracts and transits are from <a href="https://tarkov.dev" target="_blank" rel="noopener" style="color:inherit">tarkov.dev</a> and match live Tarkov, so a few may differ on SPT.`;
   tick();
   route();
 })().catch((e) => { $("loading").textContent = "Could not load the loot data"; console.error(e); });
