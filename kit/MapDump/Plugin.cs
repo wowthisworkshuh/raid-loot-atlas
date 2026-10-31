@@ -27,7 +27,7 @@ using UnityEngine.SceneManagement;
 
 namespace SurvivalPack.MapDump
 {
-    [BepInPlugin("com.survivalpack.mapdump", "SurvivalPack.MapDump", "0.2.0")]
+    [BepInPlugin("com.survivalpack.mapdump", "SurvivalPack.MapDump", "0.2.1")]
     public class Plugin : BaseUnityPlugin
     {
         ConfigEntry<KeyboardShortcut> _key;
@@ -35,7 +35,7 @@ namespace SurvivalPack.MapDump
         ConfigEntry<float> _autoDelay;
         readonly HashSet<string> _done = new HashSet<string>();
         string _msg; float _msgUntil;
-        float _worldSeenAt = -1; string _worldMap;
+        float _worldSeenAt = -1;
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
         void Awake()
@@ -43,7 +43,7 @@ namespace SurvivalPack.MapDump
             _key = Config.Bind("Dump", "Dump now", new KeyboardShortcut(KeyCode.F10, KeyCode.LeftControl), "Write this map's data now (in raid).");
             _auto = Config.Bind("Dump", "Dump automatically", true, "Write each map's data once per game session, a little after the raid loads.");
             _autoDelay = Config.Bind("Dump", "Seconds after load", 20f, "Wait this long after the raid world appears, so every door and container has loaded.");
-            Logger.LogInfo("SurvivalPack.MapDump 0.2.0 ready (Ctrl+F10 in raid)");
+            Logger.LogInfo("SurvivalPack.MapDump 0.2.1 ready (Ctrl+F10 in raid)");
         }
 
         UnityEngine.Object _world;
@@ -56,19 +56,26 @@ namespace SurvivalPack.MapDump
             {
                 _nextLook = Time.realtimeSinceStartup + 2f;
                 _world = (FindByTypeName("EFT.GameWorld") ?? FindByTypeName("EFT.ClientGameWorld")) as UnityEngine.Object;
-                if (_world != null)
-                {
-                    var m = MapId(_world);
-                    if (_worldSeenAt < 0 || m != _worldMap) { _worldSeenAt = Time.realtimeSinceStartup; _worldMap = m; }
-                }
+                if (_world != null) { _worldSeenAt = Time.realtimeSinceStartup; _retryNav = 0; }
                 else _worldSeenAt = -1;
             }
             if (_world == null) return; // also true once the raid's world is destroyed
 
-            if (_key.Value.IsDown()) { Dump(_worldMap); return; }
-            if (_auto.Value && !_done.Contains(_worldMap) && Time.realtimeSinceStartup - _worldSeenAt > _autoDelay.Value)
-                Dump(_worldMap);
+            // the map id is filled in a while after the world appears, so read it when dumping
+            if (_key.Value.IsDown()) { Dump(MapId(_world)); return; }
+            if (_auto.Value && Time.realtimeSinceStartup - _worldSeenAt > _autoDelay.Value)
+            {
+                var map = MapId(_world);
+                if (!_done.Contains(map)) Dump(map);
+                else if (_navMissing.Contains(map) && Time.realtimeSinceStartup > _retryNav) // walk map may load later
+                {
+                    _retryNav = Time.realtimeSinceStartup + 30f;
+                    if (NavMesh.CalculateTriangulation().indices.Length > 0) { _done.Remove(map); Dump(map); }
+                }
+            }
         }
+        float _retryNav;
+        readonly HashSet<string> _navMissing = new HashSet<string>();
 
         void OnGUI()
         {
@@ -87,7 +94,7 @@ namespace SurvivalPack.MapDump
                 var dir = Path.Combine(Paths.BepInExRootPath, "survivalpack-mapdump", Safe(map));
                 Directory.CreateDirectory(dir);
                 int tris = DumpNavMesh(Path.Combine(dir, "navmesh.bin"));
-                int doors = DumpObjects(Path.Combine(dir, "doors.json"), "EFT.Interactive.WorldInteractiveObject", Door);
+                int doors = DumpObjects(Path.Combine(dir, "doors.json"), "EFT.Interactive.WorldInteractiveObject", Door, skipTypeName: "EFT.Interactive.LootableContainer");
                 int conts = DumpObjects(Path.Combine(dir, "containers.json"), "EFT.Interactive.LootableContainer", Container);
                 int exits = DumpObjects(Path.Combine(dir, "exits.json"), "EFT.Interactive.ExfiltrationPoint", Exit);
                 int transits = DumpObjects(Path.Combine(dir, "transits.json"), "EFT.Interactive.TransitPoint", Generic);
@@ -95,7 +102,7 @@ namespace SurvivalPack.MapDump
                 int terrains = DumpTerrain(Path.Combine(dir, "terrain.bin"));
                 var meta = new StringBuilder("{");
                 Prop(meta, "map", map); meta.Append(',');
-                Prop(meta, "plugin", "0.2.0"); meta.Append(',');
+                Prop(meta, "plugin", "0.2.1"); meta.Append(',');
                 Prop(meta, "unity", Application.unityVersion); meta.Append(',');
                 Prop(meta, "game", Application.version); meta.Append(',');
                 Prop(meta, "scenes", string.Join(";", Enumerable.Range(0, SceneManager.sceneCount).Select(i => SceneManager.GetSceneAt(i).name))); meta.Append(',');
@@ -103,7 +110,16 @@ namespace SurvivalPack.MapDump
                 meta.Append($"\"navmeshTriangles\":{tris},\"doors\":{doors},\"containers\":{conts},\"exits\":{exits},\"transits\":{transits},");
                 meta.Append($"\"boxColliders\":{boxes},\"meshColliders\":{meshes},\"meshColliderTriangles\":{meshTris},\"unreadableMeshColliders\":{unreadable},\"terrains\":{terrains}}}");
                 File.WriteAllText(Path.Combine(dir, "meta.json"), meta.ToString());
-                Say($"Map dump for {map} written: {tris:N0} walk triangles, {doors} doors, {conts} containers, {exits} exits, {boxes + meshes:N0} wall/floor shapes. Folder: BepInEx/survivalpack-mapdump/{Safe(map)}");
+                if (tris == 0)
+                {
+                    _navMissing.Add(map);
+                    Say($"Map dump for {map} written WITHOUT the walk map: this game isn't running the AI. Host the raid yourself (not on the headless) or play offline, then dump again. {doors} doors, {conts} containers, {exits} exits saved.");
+                }
+                else
+                {
+                    _navMissing.Remove(map);
+                    Say($"Map dump for {map} written: {tris:N0} walk triangles, {doors} doors, {conts} containers, {exits} exits, {boxes + meshes:N0} wall/floor shapes. Folder: BepInEx/survivalpack-mapdump/{Safe(map)}");
+                }
             }
             catch (Exception e)
             {
@@ -209,9 +225,10 @@ namespace SurvivalPack.MapDump
         // ---------- objects ----------
         delegate void Writer(StringBuilder sb, Component c);
 
-        int DumpObjects(string path, string typeName, Writer write)
+        int DumpObjects(string path, string typeName, Writer write, string skipTypeName = null)
         {
             var type = FindType(typeName);
+            var skip = skipTypeName != null ? FindType(skipTypeName) : null;
             var sb = new StringBuilder("[\n");
             int n = 0;
             if (type != null)
@@ -220,6 +237,7 @@ namespace SurvivalPack.MapDump
                 {
                     var c = o as Component;
                     if (c == null || !c.gameObject.scene.IsValid()) continue; // skip prefabs that aren't in the level
+                    if (skip != null && skip.IsInstanceOfType(c)) continue;
                     if (n > 0) sb.Append(",\n");
                     sb.Append('{');
                     write(sb, c);
@@ -354,8 +372,26 @@ namespace SurvivalPack.MapDump
 
         static string MapId(object world)
         {
-            var id = Str(Get(world, "LocationId", "_locationId", "locationId"));
+            string id = null;
+            try
+            {   // Comfort.Common.Singleton<GameWorld>.Instance.LocationId, as SPT mods read it
+                var gw = FindType("EFT.GameWorld"); var single = FindType("Comfort.Common.Singleton`1");
+                if (gw != null && single != null)
+                {
+                    var inst = single.MakeGenericType(gw).GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                    if (inst != null) id = Str(Get(inst, "LocationId", "_locationId", "locationId"));
+                }
+            }
+            catch { }
+            if (string.IsNullOrEmpty(id)) id = Str(Get(world, "LocationId", "_locationId", "locationId"));
             if (!string.IsNullOrEmpty(id)) return id.ToLowerInvariant();
+            // fall back to the level's first scene (e.g. Factory_Rework_Day_Scripts), not the UI scene
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var n = SceneManager.GetSceneAt(i).name;
+                if (n.IndexOf("UI", StringComparison.Ordinal) >= 0 || n.StartsWith("PhysicsWorld", StringComparison.Ordinal)) continue;
+                return ("scene_" + n).ToLowerInvariant();
+            }
             return SceneManager.GetActiveScene().name.ToLowerInvariant();
         }
 
