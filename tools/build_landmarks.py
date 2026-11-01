@@ -105,17 +105,33 @@ def build(mid, dump, svgdir):
             items.append({"t": t, "x": round(float(mu[0]), 2), "y": round(gy, 2), "z": round(float(mu[1]), 2),
                           "h": round(4.5 if t == "heli" else 6.0, 2), "w": round(float(ext[1]), 2), "d": round(float(ext[0]), 2),
                           "yaw": round(float(math.atan2(ax[0], ax[1])), 4)})
-    # power lines: each pylon to its nearest neighbours along the line (within 140 m)
+    # power lines: the wires run across each pylon's cross-arm (the line goes at right angles to the arm), so
+    # each pylon links to the nearest pylon of its type ahead and behind it along that direction (within 55
+    # degrees, up to 260 m: spans are ~140 m but some are 160 m). A link needs both pylons to pick each other,
+    # or one to pick the other with nothing better on that side, so a line never jumps across to another line.
     wires = []
     for t, arm in (("pylon", 13.2), ("pylon2", 11.0)):
         P = [it for it in items if it["t"] == t]
         if len(P) < 2: continue
-        xy = np.array([[p["x"], p["z"]] for p in P]); used = set()
+        xy = np.array([[p["x"], p["z"]] for p in P])
+        pick = {}
         for a, p in enumerate(P):
-            d = np.hypot(*(xy - xy[a]).T); d[a] = 1e9
-            for bidx in np.argsort(d)[:2]:
-                if d[bidx] > 140 or (min(a, bidx), max(a, bidx)) in used: continue
-                used.add((min(a, bidx), max(a, bidx))); q = P[bidx]
+            v = np.array([math.cos(p["yaw"]), -math.sin(p["yaw"])])           # along the line
+            dl = xy - xy[a]; dist = np.hypot(*dl.T); dist[a] = 1e9
+            c = (dl @ v) / dist
+            for sgn in (1, -1):
+                ok = np.where((sgn * c > 0.57) & (dist < 260) & (dist > 20))[0]
+                if len(ok): pick[(a, sgn)] = int(ok[np.argmin(dist[ok] / (sgn * c[ok]))])
+        chosen = {a: set(b for (x, _), b in pick.items() if x == a) for a in range(len(P))}
+        used = set()
+        for a in range(len(P)):
+            for bidx in chosen[a]:
+                key = (min(a, bidx), max(a, bidx))
+                if key in used: continue
+                # mutual, or b has no pick on the side facing a
+                vb = np.array([math.cos(P[bidx]["yaw"]), -math.sin(P[bidx]["yaw"])]); side = 1 if (xy[a] - xy[bidx]) @ vb > 0 else -1
+                if a not in chosen[bidx] and (bidx, side) in pick: continue
+                used.add(key); p, q = P[a], P[bidx]
                 for side in (-0.42, 0.42):
                     for yfrac in (0.78, 0.92):
                         def tip(pp):

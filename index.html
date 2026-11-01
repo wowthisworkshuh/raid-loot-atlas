@@ -622,7 +622,7 @@ new ResizeObserver(resize).observe(stage);
 
 // ---------- data ----------
 // every push stamps BUILD, so browsers never mix a cached old file with a new one (Pages caches 10 min)
-const BUILD = "202611010338";
+const BUILD = "202611010349";
 { const f0 = window.fetch.bind(window);
   window.fetch = (u, o) => f0(typeof u === "string" && /^(data|maps)\//.test(u) ? u + (u.includes("?") ? "&" : "?") + "v=" + BUILD : u, o); }
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
