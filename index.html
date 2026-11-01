@@ -81,7 +81,7 @@ button, input, select { font: inherit; color: inherit; }
 .chip[aria-pressed="true"] { border-color: var(--khaki); background: var(--khaki); color: var(--khaki-ink); position: relative; }
 
 .panel { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
-.tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--line); flex: none; }
+.tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 1px solid var(--line); flex: none; }
 .tab {
   background: none; border: 0; border-bottom: 2px solid transparent; padding: 12px 6px 10px; cursor: pointer; color: var(--muted);
   font-weight: 600; font-stretch: var(--narrow); font-size: 15px; display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1.15;
@@ -134,12 +134,42 @@ input[type=range] { accent-color: var(--khaki); }
 .note { font-size: 12.5px; color: var(--faint); line-height: 1.55; margin: 0; }
 .note b { color: var(--muted); font-weight: 600; }
 
+/* ---- page modes ---- */
+.modes { display: flex; align-items: center; gap: 0; flex: none; }
+.modes button { background: var(--raise); border: 1px solid var(--line); color: var(--muted); padding: 6px 14px; cursor: pointer; font-weight: 700; font-stretch: var(--narrow); font-size: 15px; margin-left: -1px; }
+.modes button:first-child { border-radius: 3px 0 0 3px; margin-left: 0; }
+.modes button:last-child { border-radius: 0 3px 3px 0; }
+.modes button[aria-selected="true"] { background: var(--khaki); border-color: var(--khaki); color: var(--khaki-ink); position: relative; }
+.app.run-mode .tabs { display: none; }
+/* ---- planner ---- */
+.planner-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.planner-head h2 { margin: 0; font-weight: 700; font-stretch: var(--narrow); font-size: 22px; }
+.planner-head .badge-n { color: var(--muted); font-size: 13px; }
+.planner-head .badge-n b { color: var(--route); }
+.planner { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.pstep { display: flex; flex-direction: column; gap: 10px; padding: 14px 0 16px 34px; position: relative; border-top: 1px solid var(--line); }
+.pstep::before { content: ""; position: absolute; left: 11px; top: 40px; bottom: 0; width: 1px; background: var(--line); }
+.pstep:last-child::before { display: none; }
+.pstep h3 { margin: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 15px; font-weight: 600; }
+.pstep .num { position: absolute; left: 0; top: 13px; width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center; font-size: 12.5px; font-weight: 700;
+  background: var(--raise); border: 1px solid var(--khaki); color: var(--khaki); }
+.pstep .pick { color: var(--khaki); font-weight: 500; font-size: 13px; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.presets button { background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 6px 10px; cursor: pointer; font-size: 13px; color: var(--muted); }
+.presets button:hover { border-color: var(--faint); color: var(--fg); }
+.presets button[aria-pressed="true"] { background: var(--khaki); border-color: var(--khaki); color: var(--khaki-ink); font-weight: 600; }
+.run-keys-pick summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 2px 0; }
+.run-keys-pick summary:hover { color: var(--fg); }
+.run-keys-pick[open] summary { margin-bottom: 8px; }
+.run-out { margin-top: 6px; padding-top: 16px; border-top: 2px solid var(--route); }
+.run-out:empty { display: none; }
+.run-h { margin: 0 0 10px; font-weight: 700; font-stretch: var(--narrow); font-size: 19px; }
 /* ---- loot run ---- */
 .run-form { display: flex; flex-direction: column; gap: 10px; }
-.run-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.run-row { display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .run-row select { grid-column: 2 / 4; }
 .run-row output { font-variant-numeric: tabular-nums; color: var(--fg); min-width: 56px; text-align: right; font-weight: 600; }
-.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.seg { display: grid; grid-template-columns: repeat(2, 1fr); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
 .seg button { background: var(--raise); border: 0; border-right: 1px solid var(--line); color: var(--muted); font-weight: 600; font-stretch: var(--narrow); font-size: 14px; padding: 8px 4px; cursor: pointer; }
 .seg button:last-child { border-right: 0; }
 .seg button[aria-pressed="true"] { background: var(--khaki); color: var(--khaki-ink); }
@@ -274,6 +304,7 @@ input[type=range] { accent-color: var(--khaki); }
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 58vh auto; height: auto; min-height: 100%; }
   .top { flex-wrap: wrap; gap: 6px 14px; padding-bottom: 6px; }
   .maps { width: 100%; order: 3; }
+  .modes { order: 2; }
   .map-btn { padding: 8px 8px; }
   .stage { grid-row: 2; height: 58vh; }
   .panel { grid-row: 3; border-right: none; border-top: 1px solid var(--line); }
@@ -299,6 +330,10 @@ input[type=range] { accent-color: var(--khaki); }
       <h1>Raid Loot Atlas</h1>
       <small>SurvivalPack server</small>
     </div>
+    <div class="modes" id="modes" role="tablist" aria-label="Page">
+      <button role="tab" data-mode="map" aria-selected="true">Loot map</button>
+      <button role="tab" data-mode="run" aria-selected="false">Loot run</button>
+    </div>
     <nav class="maps" id="maps" aria-label="Map"></nav>
     <div class="variants" id="variants" hidden></div>
   </header>
@@ -306,7 +341,6 @@ input[type=range] { accent-color: var(--khaki); }
   <aside class="panel" aria-label="Loot, loot run and keys">
     <div class="tabs" role="tablist" id="tabs">
       <button class="tab" role="tab" data-tab="loot" aria-selected="true" aria-controls="tab-loot">Find loot<span class="badge-n" id="loot-badge"></span></button>
-      <button class="tab" role="tab" data-tab="run" aria-selected="false" aria-controls="tab-run">Loot run<span class="badge-n" id="run-sum"></span></button>
       <button class="tab" role="tab" data-tab="keys" aria-selected="false" aria-controls="tab-keys">Keys<span class="badge-n" id="keys-badge"></span></button>
     </div>
     <div class="panel-scroll">
@@ -341,17 +375,42 @@ input[type=range] { accent-color: var(--khaki); }
 
       <div class="tabpanel" id="tab-run" role="tabpanel" hidden>
         <section id="run-sec" hidden>
-          <div class="run-form">
-            <label class="run-row"><span>Spawn</span><select id="run-spawn" aria-label="Spawn"></select></label>
-            <p class="note">Or click a green or purple spawn dot on the map.</p>
-            <div class="seg" id="run-goal" role="group" aria-label="What the run is for">
-              <button data-g="value">Value</button><button data-g="bag">Bag space</button><button data-g="count">Item count</button>
-            </div>
-            <label class="run-row"><span id="run-t-l">Target</span><input type="range" id="run-t" min="0" max="100" step="1" value="50"><output id="run-t-o"></output></label>
-            <p class="note" id="run-goal-note"></p>
-            <div class="toggles"><button class="chip" id="run-anykey" aria-pressed="false">Plan through doors I don't have keys for</button></div>
-          </div>
-          <div id="run-out" aria-live="polite" style="margin-top:18px"></div>
+          <div class="planner-head"><h2>Plan a loot run</h2><span class="badge-n" id="run-sum"></span></div>
+          <ol class="planner">
+            <li class="pstep">
+              <h3><span class="num">1</span><span class="q">Where do you spawn?</span></h3>
+              <select id="run-spawn" aria-label="Spawn"></select>
+              <p class="note">Or click a green (PMC) or purple (Scav) spawn dot on the map.</p>
+            </li>
+            <li class="pstep">
+              <h3><span class="num">2</span><span class="q">What are you after?</span><span class="pick" id="ps-what"></span></h3>
+              <div class="presets" id="run-what" role="group" aria-label="What you're after">
+                <button data-p="v50">Anything worth ₽50k+</button><button data-p="v100">Anything worth ₽100k+</button>
+                <button data-p="val">Valuables</button><button data-p="tech">Tech parts</button><button data-p="med">Medical</button>
+                <button data-p="keys">Keys and keycards</button><button data-p="item">A specific item</button>
+              </div>
+              <div class="search" id="run-item" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+                <input id="run-q" type="search" list="run-items" placeholder="Item name: LEDX, GPU, Bitcoin" autocomplete="off" aria-label="Item to look for">
+                <datalist id="run-items"></datalist>
+              </div>
+            </li>
+            <li class="pstep">
+              <h3><span class="num">3</span><span class="q">What's the goal?</span></h3>
+              <div class="seg" id="run-goal" role="group" aria-label="What the run is for">
+                <button data-g="value">Fill my bag</button><button data-g="count">Find a number of it</button>
+              </div>
+              <label class="run-row"><span id="run-t-l">Target</span><input type="range" id="run-t" min="0" max="100" step="1" value="50"><output id="run-t-o"></output></label>
+              <label class="run-row" id="run-bag-row"><span>Free slots</span><input type="range" id="run-bag" min="4" max="100" step="1" value="30"><output id="run-bag-o"></output></label>
+              <p class="note" id="run-goal-note"></p>
+            </li>
+            <li class="pstep">
+              <h3><span class="num">4</span><span class="q">Which keys do you have?</span><span class="pick" id="ps-keys"></span></h3>
+              <details class="run-keys-pick" id="run-keys-pick"><summary>Tick your keys for this map</summary><div class="keys" id="run-keys-list"></div></details>
+              <div class="toggles"><button class="chip" id="run-anykey" aria-pressed="false">Also plan through doors I don't have keys for</button></div>
+            </li>
+          </ol>
+          <div id="run-out" class="run-out" aria-live="polite"></div>
         </section>
         <p class="empty-note">Loot runs need this map's walk data from the MapDump plugin. Pick another map, or dump this one while hosting a raid.</p>
       </div>
@@ -546,7 +605,7 @@ new ResizeObserver(resize).observe(stage);
 
 // ---------- data ----------
 // every push stamps BUILD, so browsers never mix a cached old file with a new one (Pages caches 10 min)
-const BUILD = "202611010247";
+const BUILD = "202611010305";
 { const f0 = window.fetch.bind(window);
   window.fetch = (u, o) => f0(typeof u === "string" && /^(data|maps)\//.test(u) ? u + (u.includes("?") ? "&" : "?") + "v=" + BUILD : u, o); }
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
@@ -1176,6 +1235,8 @@ function renderKeys(dump) {
   const have = rows.filter((r) => MY_KEYS.has(r.id)).length, top = rows.find((r) => best.has(r.id));
   $("keys-sum").innerHTML = !rows.length ? "No locked doors on this map need a key." : `<span>You have ${have} of the ${rows.length} keys for this map.${top ? ` Best one to get next: <b>${esc(shortKey(top.name.replace(/^TerraGroup (?!Labs)/, "")))}</b>.` : ""}</span>`;
   $("keys-badge").textContent = rows.length ? `${have} of ${rows.length}` : "";
+  $("run-keys-list").innerHTML = $("keys").innerHTML;
+  $("run-keys-pick").hidden = !rows.length;
   $("reach-only").setAttribute("aria-pressed", String(ONLY_REACH));
   const counts = { need: 0, ok: 0, breach: 0, sealed: 0 };
   for (const d of doorList) { const s = doorStatus(d); if (s in counts) counts[s]++; }
@@ -1190,10 +1251,12 @@ $("keys").addEventListener("click", (e) => {
   colorDoors(); applyReach(); refresh();
 });
 // ---------- panel tabs and the Layers menu ----------
-let TAB = "loot";
+let TAB = "loot", MAPTAB = "loot";
 try { TAB = localStorage.getItem("atlas-tab") || "loot"; } catch {}
 function showTab(t) {
-  TAB = t;
+  TAB = t; if (t !== "run") MAPTAB = t;
+  document.querySelector(".app").classList.toggle("run-mode", t === "run");
+  document.querySelectorAll("#modes button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.mode === (t === "run" ? "run" : "map"))));
   document.querySelectorAll("#tabs .tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
   for (const id of ["loot", "run", "keys"]) $("tab-" + id).hidden = id !== t;
   if (spawnPts) spawnPts.visible = t === "run";
@@ -1203,9 +1266,10 @@ function showTab(t) {
 $("tabs").addEventListener("click", (e) => { const b = e.target.closest(".tab"); if (b) showTab(b.dataset.tab); });
 $("tabs").addEventListener("keydown", (e) => {
   if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-  const order = ["loot", "run", "keys"], i = (order.indexOf(TAB) + (e.key === "ArrowRight" ? 1 : 2)) % 3;
+  const order = ["loot", "keys"], i = (order.indexOf(TAB) + 1) % 2;
   showTab(order[i]); document.querySelector(`#tabs .tab[data-tab="${order[i]}"]`).focus();
 });
+$("modes").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) showTab(b.dataset.mode === "run" ? "run" : MAPTAB); });
 $("layers-btn").addEventListener("click", () => { const open = $("layers").hidden; $("layers").hidden = !open; $("layers-btn").setAttribute("aria-expanded", String(open)); });
 document.addEventListener("pointerdown", (e) => {
   if (!$("layers").hidden && !e.target.closest("#layers") && !e.target.closest("#layers-btn")) { $("layers").hidden = true; $("layers-btn").setAttribute("aria-expanded", "false"); }
@@ -1389,6 +1453,7 @@ function refresh() {
   renderList(cand);
   renderContainers(set);
   renderKeys();
+  if (PJ) renderPlanner();
   scheduleRun();
 }
 
@@ -1664,8 +1729,8 @@ function buildLandmarks(data) {
 // the route is the shortest walk from the spawn through places that reach the goal, ending at the nearest extract:
 // best gain per extra metre insertion, then 2-opt / move / drop / swap, then exact order (Held-Karp) up to 12 places.
 // Every extract is open from every spawn on this server and raids have no time limit, so only distance counts.
-const RUN = { spawn: -1, goal: "value", t: { value: 50, bag: 24, count: 2 }, anyKey: false };
-try { const sv = JSON.parse(localStorage.getItem("atlas-run") || "{}"); if (sv.goal) RUN.goal = sv.goal; if (sv.t) Object.assign(RUN.t, sv.t); RUN.anyKey = !!sv.anyKey; } catch {}
+const RUN = { spawn: -1, goal: "value", t: { value: 50, bag: 30, count: 2 }, anyKey: false };
+try { const sv = JSON.parse(localStorage.getItem("atlas-run") || "{}"); if (sv.goal && sv.goal !== "bag") RUN.goal = sv.goal; if (sv.t) Object.assign(RUN.t, sv.t); RUN.anyKey = !!sv.anyKey; } catch {}
 let PG = null, PJ = null, runObj = null, runMarks = [], spawnPts = null, runTimer = 0, RUNPATH = null, RUNSTEPS = [];
 const pathCache = {};
 async function loadPaths(id) {
@@ -1686,8 +1751,16 @@ async function loadPaths(id) {
     PG = { n, pos, w, door, off: deg, nb, ne };
     PJ = j;
     $("run-sec").hidden = false;
-    renderRunForm(); buildSpawnPts();
+    renderRunForm(); buildSpawnPts(); fillRunItems(); renderPlanner();
   } catch (e) { console.error(e); }
+}
+// doors you'd have to get a key for cost as much as an 80 m detour, breaching 10 m: the route only uses them
+// for loot behind them, never as a shortcut (it used to cut through locked dorm rooms)
+const KEY_DETOUR = 80, BREACH_DETOUR = 10;
+function edgeCost(e, keys) {
+  const d = PG.door[e]; if (d < 0) return PG.w[e];
+  const [, key, kind] = PJ.doors[d];
+  return PG.w[e] + (kind === "breach" ? BREACH_DETOUR : kind === "key" && !keys.has(key) ? KEY_DETOUR : 0);
 }
 function edgeOK(e, keys) {
   const d = PG.door[e]; if (d < 0) return true;
@@ -1703,7 +1776,7 @@ function dijkstra(src, keys) {
     const [d, u] = pop(); if (d > dist[u]) continue;
     for (let k = PG.off[u]; k < PG.off[u + 1]; k++) {
       const e = PG.ne[k]; if (!edgeOK(e, keys)) continue;
-      const v = PG.nb[k], nd = d + PG.w[e];
+      const v = PG.nb[k], nd = d + edgeCost(e, keys);
       if (nd < dist[v]) { dist[v] = nd; prev[v] = u; pe[v] = e; push([nd, v]); }
     }
   }
@@ -1711,8 +1784,7 @@ function dijkstra(src, keys) {
 }
 // goals: what the run is for. Target slider meaning per goal.
 const GOALS = {
-  value: { label: "Value", min: 0, max: 100, fmt: (k) => fmtRub(goalTarget("value", k)), note: "Expected loot worth (handbook prices) to come home with. The route is the shortest walk whose places add up to it." },
-  bag: { label: "Free slots", min: 4, max: 100, fmt: (k) => `${k} slots`, note: "Free space in your backpack, rig and pockets. The route fills it with the most loot for the walking, using each item's real size." },
+  value: { label: "Bring home", min: 0, max: 100, fmt: (k) => fmtRub(goalTarget("value", k)), note: "Loot worth (handbook prices) to come home with on an average raid, and the free space in your backpack, rig and pockets. The route is the shortest walk to that value that still fits in your bag, using each item's real size." },
   count: { label: "How many", min: 1, max: 10, fmt: (k) => `${k}`, note: "" },
 };
 const goalTarget = (g, k) => g === "value" ? Math.round(1e5 * Math.pow(10, k / 50) / 1e4) * 1e4 : k;   // value: 100k .. 10M, log scale
@@ -1789,7 +1861,7 @@ function distancesFrom(src, keys, targets) {
     if (need.delete(u) && !need.size) break;
     for (let q = PG.off[u]; q < PG.off[u + 1]; q++) {
       const e = PG.ne[q]; if (!edgeOK(e, keys)) continue;
-      const v = PG.nb[q], nd = d + PG.w[e];
+      const v = PG.nb[q], nd = d + edgeCost(e, keys);
       if (nd < dist[v]) { dist[v] = nd; push(nd, v); }
     }
   }
@@ -1811,16 +1883,17 @@ function solveRun() {
   if (!reach.length) { renderRunOut({ err: "Nothing on your search can be reached from this spawn with your keys." }); return; }
   // what the whole map gives for this search, checking everything you can reach
   const mapMax = { val: reach.reduce((t, p) => t + p.val, 0), slots: reach.reduce((t, p) => t + p.slots, 0), cnt: reach.reduce((t, p) => t + p.cnt, 0) };
-  const want = goal === "value" ? target : goal === "count" ? target : target;
-  const avail = goal === "value" ? mapMax.val : goal === "count" ? mapMax.cnt : mapMax.slots;
+  const avail = goal === "count" ? mapMax.cnt : mapMax.val;
   // a target the map can't give on average: aim for the part of it that's worth walking for
-  const aim = goal === "bag" ? Math.min(target, avail * 0.6) : (want > avail * 0.6 ? avail * 0.6 : want);
+  const aim = target > avail * 0.6 ? avail * 0.6 : target;
+  const cap = goal === "value" ? RUN.t.bag : Infinity;   // free slots: never plan more loot than fits
   const MAXP = 28;
-  // candidates: the best places for the goal (bag space: the best value and the best value per slot)
+  // candidates: the best places for the goal, and for loot value also the best value per slot. Places worth
+  // under a tenth of the 8th-best place are left out (loot is thin on open maps, one sure spawn mustn't set the bar)
   const gain = (p) => goal === "count" ? p.cnt : p.val;
-  const top = Math.max(...reach.map(gain));
-  let cand = [...reach].filter((p) => gain(p) >= top * 0.1).sort((a, b) => gain(b) - gain(a)).slice(0, 60);
-  if (goal === "bag") for (const p of [...reach].sort((a, b) => b.val / Math.max(b.slots, 0.05) - a.val / Math.max(a.slots, 0.05)).slice(0, 25)) if (!cand.includes(p)) cand.push(p);
+  const ranked = reach.map(gain).sort((a, b) => b - a), bar = (ranked[Math.min(7, ranked.length - 1)] || 0) * 0.1;
+  let cand = [...reach].filter((p) => gain(p) >= bar).sort((a, b) => gain(b) - gain(a)).slice(0, 60);
+  if (goal === "value") for (const p of [...reach].sort((a, b) => b.val / Math.max(b.slots, 0.05) - a.val / Math.max(a.slots, 0.05)).slice(0, 25)) if (!cand.includes(p)) cand.push(p);
   const K = cand.length, N = K + 1, D = new Float64Array(N * N), E = new Float64Array(N), EI = new Int32Array(N);
   const nodesAll = [start, ...cand.map((p) => p.node)], tg = [...nodesAll, ...exitNodes];
   const fill = (i, dist) => { for (let j = 0; j < N; j++) D[i * N + j] = dist[nodesAll[j]]; E[i] = Infinity; EI[i] = -1;
@@ -1840,21 +1913,21 @@ function solveRun() {
   };
   const G = (i) => gain(cand[i - 1]), SL = (i) => cand[i - 1].slots;
   let route = [], got = 0, slots = 0;
-  const used = new Set(), met = () => route.length >= MAXP || (goal === "bag" ? slots >= aim - 0.05 : got >= aim - 1e-9);
+  const used = new Set(), met = () => route.length >= MAXP || got >= aim - 1e-9 || slots >= cap - 0.05;
   while (!met()) {
     let best = null;
     for (let c = 1; c <= K; c++) {
       if (used.has(c) || !Number.isFinite(D[c])) continue;
-      if (goal === "bag" && slots + SL(c) > target + 0.25) continue;
+      if (slots + SL(c) > cap + 0.25) continue;
       const [dc, at] = insertCost(route, c); if (!Number.isFinite(dc)) continue;
-      const g = goal === "bag" ? G(c) : Math.min(G(c), aim - got);
+      const g = Math.min(G(c), aim - got);
       const ratio = g / (Math.max(dc, 0) + 8);
       if (!best || ratio > best[0]) best = [ratio, c, at];
     }
     if (!best) break;
     route.splice(best[2], 0, best[1]); used.add(best[1]); got += G(best[1]); slots += SL(best[1]);
   }
-  if (!route.length) { renderRunOut({ err: goal === "bag" ? "Nothing on your search fits in that many slots." : "No reachable place helps with this goal." }); return; }
+  if (!route.length) { renderRunOut({ err: slots >= cap - 0.05 || cap < 1 ? "Nothing on your search fits in that many slots." : "No reachable place helps with this goal." }); return; }
   // tighten: better order (2-opt, move one), drop what the goal doesn't need, swap in better places
   const improveOrder = () => { let better = true, c0 = cost(route);
     while (better) { better = false;
@@ -1864,14 +1937,15 @@ function solveRun() {
       for (let i = 0; i < route.length; i++) { const x = route[i], rest = route.filter((_, k) => k !== i), [dc, at] = insertCost(rest, x);
         const r = rest.slice(); r.splice(at, 0, x); const c = cost(r); if (c < c0 - 1e-6) { route = r; c0 = c; better = true; } } } };
   improveOrder();
-  for (let pass = 0; pass < 3 && goal !== "bag"; pass++) {
+  const bagFull = slots >= cap - 0.05 && got < aim - 1e-9;   // the bag filled before the value target
+  for (let pass = 0; pass < 3 && !bagFull; pass++) {
     let changed = false;
     for (const x of [...route]) { // drop places the target doesn't need, if that shortens the walk
-      if (got - G(x) >= aim - 1e-9) { const r = route.filter((y) => y !== x); if (cost(r) < cost(route)) { route = r; got -= G(x); used.delete(x); changed = true; } } }
+      if (got - G(x) >= aim - 1e-9) { const r = route.filter((y) => y !== x); if (cost(r) < cost(route)) { route = r; got -= G(x); slots -= SL(x); used.delete(x); changed = true; } } }
     for (let i = 0; i < route.length; i++) for (let c = 1; c <= K; c++) { // swap one in, one out
-      if (used.has(c) || !Number.isFinite(D[c]) || got - G(route[i]) + G(c) < aim - 1e-9) continue;
+      if (used.has(c) || !Number.isFinite(D[c]) || got - G(route[i]) + G(c) < aim - 1e-9 || slots - SL(route[i]) + SL(c) > cap + 0.25) continue;
       const rest = route.filter((_, k) => k !== i), [dc, at] = insertCost(rest, c), r = rest.slice(); r.splice(at, 0, c);
-      if (cost(r) < cost(route) - 0.5) { used.delete(route[i]); used.add(c); got += G(c) - G(route[i]); route = r; changed = true; }
+      if (cost(r) < cost(route) - 0.5) { used.delete(route[i]); used.add(c); got += G(c) - G(route[i]); slots += SL(c) - SL(route[i]); route = r; changed = true; }
     }
     if (changed) improveOrder(); else break;
   }
@@ -1896,7 +1970,7 @@ function solveRun() {
   if (exitNode == null) { renderRunOut({ err: "No extract can be reached from these places with your keys." }); return; }
   legs.push(walk(tree(from), exitNode));
   const sum = { val: places.reduce((t, p) => t + p.val, 0), slots: places.reduce((t, p) => t + p.slots, 0), cnt: places.reduce((t, p) => t + p.cnt, 0),
-    pAny: 1 - places.reduce((t, p) => t * p.miss, 1), short: aim < target - 1e-9, avail, mapMax, blockedVal };
+    pAny: 1 - places.reduce((t, p) => t * p.miss, 1), short: aim < target - 1e-9, bagFull, cap, avail, mapMax, blockedVal };
   drawRun(legs, places, sp, ei, cost(route), sum);
 }
 function clearRun() {
@@ -1962,7 +2036,7 @@ function drawRun(legs, stops, sp, exitIdx, total, sum) {
       steps.push({ t: "stop", g, focus: { x: cx, y: Math.min(...g.places.map((p) => p.y)), z: cz, r } }); }
   });
   if (ex) { mark(new THREE.Vector3(...toWorld(ex.x, ex.y + 2, ex.z)), "Exit", "end"); steps.push({ t: "exit", label: `Extract at ${ex.k === "t" ? "transit to " : ""}${ex.n}`, focus: { x: ex.x, y: ex.y, z: ex.z, r: 22 } }); }
-  RUNSTEPS = steps;
+  RUNSTEPS = steps; total = RUNPATH.total; // real metres walked (the planner's door costs aren't distance)
   renderRunOut({ total, steps, keysNeeded, sum });
 }
 function spawnName(i) {
@@ -1993,11 +2067,11 @@ function renderRunForm() {
 }
 function renderRunOut(r) {
   const sum = $("run-sum");
-  if (!r) { sum.innerHTML = ""; $("run-out").innerHTML = `<p class="note">Choose where you spawn and what the run is for. You get the shortest walk that does it, location by location, ending at the nearest extract. It only goes through doors you have keys for, unless you allow other keys.</p>`; return; }
+  if (!r) { sum.innerHTML = ""; $("run-out").innerHTML = `<p class="note">Pick your spawn in step 1 and the route appears here: the shortest walk that does what you set, location by location, ending at the nearest extract.</p>`; return; }
   if (r.err) { sum.innerHTML = "no route"; $("run-out").innerHTML = `<p class="note">${esc(r.err)}</p>`; return; }
   const S = r.sum, goal = RUN.goal, target = goalTarget(goal, RUN.t[goal]), what = searchLabel();
   const groups = r.steps.filter((s) => s.t === "stop").map((s) => s.g);
-  sum.innerHTML = `<b>${Math.round(r.total)} m</b>`;
+  sum.innerHTML = `<b>${Math.round(r.total)} m</b> walk`;
   const slotsTxt = (x) => x < 0.5 ? "under 1 slot" : `about ${Math.max(1, Math.round(x))} slot${Math.round(x) > 1 ? "s" : ""}`;
   const ICON = { start: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z" fill="currentColor"/></svg>`,
     exit: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h6v11H3z M9 8h5 M11.5 5.5 14 8l-2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>` };
@@ -2012,17 +2086,19 @@ function renderRunOut(r) {
   }).join("");
   const keys = r.keysNeeded.size ? `<p class="run-keys">Keys you'd need: <b>${[...r.keysNeeded.values()].map(esc).join(", ")}</b></p>` : "";
   let note = "";
-  if (S.short) note = goal === "count"
+  if (S.bagFull) note = `<p class="note">Your bag fills up first: about ${fmtRub(Math.round(S.val))} of ${esc(what)} fits in ${S.cap} slots on an average raid. Free more slots, or raise the minimum value so only the best loot takes space.</p>`;
+  else if (S.short) note = goal === "count"
     ? `<p class="note">${esc(map.name)} averages ${S.avail < 1 ? S.avail.toFixed(2) : S.avail.toFixed(1)} of ${esc(what)} per raid, even checking every spot you can reach. This route covers the places worth the walk.</p>`
-    : goal === "value" ? `<p class="note">${esc(what)} on ${esc(map.name)} averages ${fmtRub(Math.round(S.avail))} per raid even checking every spot you can reach, so your target isn't realistic. This route goes for the part that's worth the walk.</p>`
-    : `<p class="note">${esc(what)} on ${esc(map.name)} only fills about ${Math.round(S.avail)} slots per raid on average, even checking everything. Widen the search (lower the minimum value) to fill more.</p>`;
-  const blocked = S.blockedVal > 0 ? `<p class="note">Another ${goal === "count" ? S.blockedVal.toFixed(1) + " " + esc(what) : fmtRub(Math.round(S.blockedVal))} on average sits behind doors you can't open. Tick keys in My keys, or allow other keys.</p>` : "";
+    : target > S.avail
+      ? `<p class="note">${esc(what)} on ${esc(map.name)} averages ${fmtRub(Math.round(S.avail))} per raid even checking every spot you can reach, so ${fmtRub(target)} isn't possible on an average raid. This route goes for the part that's worth the walk.</p>`
+      : `<p class="note">${esc(what)} on ${esc(map.name)} averages ${fmtRub(Math.round(S.avail))} per raid if you check every spot you can reach. Getting ${fmtRub(target)} means checking nearly all of them, so this route goes for the part that's worth the walk.</p>`;
+  const blocked = S.blockedVal >= (goal === "count" ? 0.01 : 5000) ? `<p class="note">Another ${goal === "count" ? (S.blockedVal < 1 ? S.blockedVal.toFixed(2) : S.blockedVal.toFixed(1)) + " " + esc(what) : fmtRub(Math.round(S.blockedVal))} on average sits behind doors you can't open. Tick keys in My keys, or allow other keys.</p>` : "";
   const totals = [
     `<div><b>${Math.round(r.total)} m</b><span>walk, spawn to extract</span></div>`,
     goal === "count" ? `<div><b>${fmtOdds(S.pAny)}</b><span>you find at least one</span></div>` : `<div><b>~${fmtRub(Math.round(S.val))}</b><span>loot on an average raid</span></div>`,
-    goal === "bag" ? `<div><b>${Math.round(S.slots)} / ${target}</b><span>slots filled on average</span></div>` : `<div><b>${fmtOdds(S.pAny)}</b><span>you find something</span></div>`,
+    goal === "value" ? `<div><b>${Math.round(S.slots)} / ${S.cap}</b><span>slots filled on average</span></div>` : `<div><b>${fmtOdds(S.pAny)}</b><span>you find something</span></div>`,
   ].join("");
-  $("run-out").innerHTML = `<div class="run-total">${totals}</div>
+  $("run-out").innerHTML = `<h3 class="run-h">Your route</h3><div class="run-total">${totals}</div>
     <button class="walk-btn" id="walk-btn"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z" fill="currentColor"/></svg>Walk the route</button>
     <p class="note">Looking for ${esc(what)}. Change the search to plan for something else. Click a step to see it on the map.</p><ol class="run-steps">${li}</ol>${keys}${note}${blocked}`;
 }
@@ -2041,12 +2117,14 @@ function renderGoal() {
   document.querySelectorAll("#run-goal button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.g === RUN.goal)));
   el.min = g.min; el.max = g.max; el.value = RUN.t[RUN.goal];
   $("run-t-l").textContent = g.label; $("run-t-o").textContent = g.fmt(RUN.t[RUN.goal]);
-  $("run-goal-note").textContent = RUN.goal === "count" ? `How many of ${searchLabel()} to come home with (expected). Narrow the search above to the item you want.` : g.note;
+  $("run-goal-note").textContent = RUN.goal === "count" ? `How many of ${searchLabel()} to come home with on an average raid. Pick the item in step 2.` : g.note;
+  $("run-bag-row").hidden = RUN.goal !== "value"; $("run-bag").value = RUN.t.bag; $("run-bag-o").textContent = `${RUN.t.bag} slots`;
 }
+$("run-bag").addEventListener("input", () => { RUN.t.bag = +$("run-bag").value; $("run-bag-o").textContent = `${RUN.t.bag} slots`; saveRun(); scheduleRun(); });
 $("run-spawn").addEventListener("change", () => { RUN.spawn = +$("run-spawn").value; scheduleRun(); });
 $("run-t").addEventListener("input", () => { RUN.t[RUN.goal] = +$("run-t").value; $("run-t-o").textContent = GOALS[RUN.goal].fmt(RUN.t[RUN.goal]); saveRun(); scheduleRun(); });
 $("run-goal").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; RUN.goal = b.dataset.g; renderGoal(); saveRun(); scheduleRun(); });
-$("run-anykey").addEventListener("click", () => { RUN.anyKey = !RUN.anyKey; $("run-anykey").setAttribute("aria-pressed", String(RUN.anyKey)); saveRun(); scheduleRun(); });
+$("run-anykey").addEventListener("click", () => { RUN.anyKey = !RUN.anyKey; $("run-anykey").setAttribute("aria-pressed", String(RUN.anyKey)); saveRun(); renderPlanner(); scheduleRun(); });
 
 // click a spawn dot to start there
 canvas.addEventListener("click", (ev) => {
@@ -2055,6 +2133,51 @@ canvas.addEventListener("click", (ev) => {
   PJ.sp.forEach((s, i) => { if (s[3] < 0) return; v3.set(...toWorld(s[0], s[1] + 0.5, s[2])).project(camera); if (v3.z > 1) return;
     const d = Math.hypot((v3.x + 1) / 2 * r.width - mx, (1 - v3.y) / 2 * r.height - my); if (d < bd) { bd = d; best = i; } });
   if (best >= 0) { RUN.spawn = best; renderRunForm(); scheduleRun(); }
+});
+
+// ---------- loot run planner: what you're after (drives the same search as the loot map) ----------
+const PRESETS = {
+  v50: { cat: "", price: "50000" }, v100: { cat: "", price: "100000" },
+  val: { cat: "5b47574386f77428ca22b2f1", price: "0" }, tech: { cat: "5b47574386f77428ca22b2ef", price: "25000" },
+  med: { cat: "5b47574386f77428ca22b2f3", price: "0" }, keys: { cat: "5b47574386f77428ca22b342", price: "0" },
+};
+let runItemMode = false;
+function presetNow() {
+  if (runItemMode || $("q").value.trim() || sel.tpl) return "item";
+  return Object.keys(PRESETS).find((k) => PRESETS[k].cat === $("cat").value && PRESETS[k].price === $("price").value) || "";
+}
+function renderPlanner() {
+  const pk = presetNow();
+  document.querySelectorAll("#run-what button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.p === pk)));
+  $("run-item").hidden = pk !== "item";
+  if (pk === "item" && document.activeElement !== $("run-q")) $("run-q").value = sel.tpl ? (ITEMS[sel.tpl]?.[0] || "") : $("q").value;
+  $("ps-what").textContent = pk && pk !== "item" ? "" : searchLabel();
+  const n = [...MY_KEYS].filter((k) => blockCache[MODEL_OF[map.id] || map.id]?.dump?.doors?.some((d) => d.key === k)).length;
+  $("ps-keys").textContent = `${n} ticked${RUN.anyKey ? ", planning through others too" : ""}`;
+}
+function fillRunItems() {
+  if (!map) return;
+  const names = Object.keys(map.expected).map((t) => ITEMS[t]?.[0]).filter(Boolean).sort();
+  $("run-items").innerHTML = names.map((n) => `<option value="${esc(n)}">`).join("");
+}
+$("run-what").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.p === "item") { runItemMode = true; $("cat").value = ""; $("price").value = "0"; renderPlanner(); $("run-q").focus(); return; }
+  runItemMode = false; const p = PRESETS[b.dataset.p];
+  if (b.dataset.p === "keys" && RUN.goal !== "count") { RUN.goal = "count"; RUN.t.count = 1; saveRun(); } // keys are worth little at handbook prices: find one
+  $("q").value = ""; $("run-q").value = ""; sel.tpl = null; $("cat").value = p.cat; $("price").value = p.price;
+  $("cat").dispatchEvent(new Event("change"));
+});
+$("run-q").addEventListener("input", () => {
+  const v = $("run-q").value.trim(), exact = Object.keys(map.expected).find((t) => ITEMS[t]?.[0] === v);
+  $("q").value = v;
+  if (exact) { sel.tpl = exact; refresh(); } else $("q").dispatchEvent(new Event("input"));
+});
+$("run-keys-list").addEventListener("click", (e) => {
+  const b = e.target.closest(".key"); if (!b) return;
+  const k = b.dataset.k; MY_KEYS.has(k) ? MY_KEYS.delete(k) : MY_KEYS.add(k);
+  try { localStorage.setItem("atlas-keys", JSON.stringify([...MY_KEYS])); } catch {}
+  colorDoors(); applyReach(); refresh();
 });
 
 // ---------- camera moves: fly to a step, walk the route ----------
