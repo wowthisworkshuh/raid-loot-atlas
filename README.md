@@ -10,7 +10,7 @@ Loot search and results are on the left; map controls (map, floors, what to show
 
 Each map is a rough "dev blockout": grey grid boxes like an unfinished Source map. Building outlines, floors, walls, roads, water and rocks come from [tarkov.dev's SVG maps](https://github.com/the-hideout/tarkov-dev-svg-maps) (CC BY-NC-SA 4.0), lined up with tarkov.dev's own map bounds; the orientation for each map was checked by how many loot spots land inside buildings (Labs re-fitted: 79% to 90% of spots inside rooms on the right floor). Heights come from the loot spots themselves: the ground from outdoor spots, building tops and floor levels from the spots inside each outline. Each river, lake or sea gets one flat level from its shoreline, and the ground under it is dug out. The Labyrinth has no outline map, so it's built from its spots alone. Place names, extracts and transits come from tarkov.dev and match live Tarkov, so a few may differ on SPT.
 
-`tools/build_blockouts.py` rebuilds them (needs the SVG repo and tarkov.dev's `src/data/maps.json`). A real map export (below) replaces the blockout for any map that has one.
+`tools/build_blockouts.py` rebuilds them (needs the SVG repo and tarkov.dev's `src/data/maps.json`). A map dump (below) replaces the blockout for any map that has one: Factory now uses the game's own collision shapes and walk map, rebuilt by `tools/build_dump_assets.py`.
 
 ## How the odds work
 
@@ -26,9 +26,10 @@ Each map is a rough "dev blockout": grey grid boxes like an unfinished Source ma
 | Container loot odds | Done |
 | Loose-loot data matched to our server's exact SPT 4.1.6 files | To do: run `kit/collect-server-loot.ps1`, send the zip |
 | Rough 3D blockouts, extracts, transits and place names, 10 maps | Done |
-| Exported map models (real geometry) | Optional: one map at a time, see below |
-| Container positions on the map | To do: comes with the map dump |
-| Loot runs, my keys, locked doors, key values, suggested keys | To do: built on the map dump (plugin ready in kit/MapDump) |
+| Real map layouts from the map dump (walls, floors, stairs, walk map) | Factory done; other maps need a dump each |
+| Container positions on the map | Factory done (167 containers); others come with their dump |
+| Locked doors and My keys | Factory done: doors red without the key, green with it, orange breachable, grey sealed |
+| Loot runs, key values, suggested keys | To do: needs a Factory dump from a raid you host yourself (bot jump/door links) |
 | **Streets of Tarkov** | **To do** (biggest map; done last) |
 
 ## Map dump: walkable areas, locked doors, keys and containers (kit/MapDump)
