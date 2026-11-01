@@ -1,0 +1,53 @@
+# Builds kit/AtlasLink into SurvivalPack.AtlasLink.dll. Every change is compiled as a check; a public release
+# is published only when the commit message says [release] (or the workflow is run by hand). Reference
+# libraries as in build-mapdump.yml.
+name: Build AtlasLink plugin
+on:
+  push:
+    paths: ["kit/AtlasLink/**", ".github/workflows/build-atlaslink.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Fetch reference libraries
+        run: |
+          set -euo pipefail
+          REF="$RUNNER_TEMP/spt"; mkdir -p "$REF/EscapeFromTarkov_Data/Managed" "$REF/BepInEx/core"
+          VER=$(curl -fsSL https://api.nuget.org/v3-flatcontainer/unityengine.modules/index.json \
+            | python3 -c "import sys,json; v=json.load(sys.stdin)['versions']; m=[x for x in v if x.startswith('2022.3.')]; print((m or v)[-1])")
+          echo "UnityEngine.Modules $VER"
+          curl -fsSL -o "$RUNNER_TEMP/unity.nupkg" "https://api.nuget.org/v3-flatcontainer/unityengine.modules/$VER/unityengine.modules.$VER.nupkg"
+          unzip -q -j -o "$RUNNER_TEMP/unity.nupkg" 'lib/*.dll' -d "$REF/EscapeFromTarkov_Data/Managed" || true
+          unzip -q -j -o "$RUNNER_TEMP/unity.nupkg" 'lib/*/*.dll' -d "$REF/EscapeFromTarkov_Data/Managed" || true
+          curl -fsSL -o "$RUNNER_TEMP/bepinex.zip" https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.2/BepInEx_win_x64_5.4.23.2.zip
+          unzip -q -o "$RUNNER_TEMP/bepinex.zip" "BepInEx/core/*" -d "$REF"
+          chmod -R a+rX "$REF"   # the NuGet package's zip entries carry no permission bits
+          echo "::notice::UnityEngine.Modules $VER; package files: $(unzip -Z1 "$RUNNER_TEMP/unity.nupkg" | grep -i '\.dll$' | head -8 | tr '\n' ' ')"
+          echo "::notice::copied $(ls "$REF/EscapeFromTarkov_Data/Managed" | wc -l) files; UnityEngine.dll: $(ls "$REF/EscapeFromTarkov_Data/Managed/UnityEngine.dll" 2>&1); core: $(ls "$REF/EscapeFromTarkov_Data/Managed/UnityEngine.CoreModule.dll" 2>&1)"
+          echo "::notice::versions: $(curl -fsSL https://api.nuget.org/v3-flatcontainer/unityengine.modules/index.json | python3 -c "import sys,json; v=json.load(sys.stdin)['versions']; print(len(v), v[:3], v[-6:])")"
+          echo "SPT_REF=$REF" >> "$GITHUB_ENV"
+      - name: Build
+        run: |
+          set -o pipefail
+          dotnet build kit/AtlasLink/SurvivalPack.AtlasLink.csproj -c Release "-p:SptPath=$SPT_REF" -nologo 2>&1 | tee build.log || {
+            { grep -E "error|Error" build.log || true; } | sort -u | head -12 | sed 's/^ */::notice::/'
+            exit 1; }
+      - name: Publish release
+        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          DLL=kit/AtlasLink/bin/Release/netstandard2.1/SurvivalPack.AtlasLink.dll
+          VER=$(grep -oP '(?<=<Version>)[^<]+' kit/AtlasLink/SurvivalPack.AtlasLink.csproj)
+          TAG="atlaslink-v$VER"
+          gh release delete "$TAG" -y --cleanup-tag || true
+          gh release create "$TAG" "$DLL" --title "SurvivalPack.AtlasLink $VER" --latest=false \
+            --notes "Links your raid to the Raid Loot Atlas loot run planner (your map, spawn and position, read only, this PC only). Put SurvivalPack.AtlasLink.dll in <SPT>/BepInEx/plugins/SurvivalPack.AtlasLink/. Built from commit $GITHUB_SHA."
