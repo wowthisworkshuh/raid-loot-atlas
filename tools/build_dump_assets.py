@@ -6,9 +6,18 @@
 
 Usage: python build_dump_assets.py --dump <dump/factory4_day> --db <SPT database> --tdev-exits extracts-tarkovdev.txt --out maps
 
-geo.bin layout (little endian): "GEO1", int boxCount, int vertCount, int triCount,
-  boxes: float cx,cy,cz, sx,sy,sz, qx,qy,qz,qw   (Unity world space, size already scaled)
+geo.bin layout (little endian): "GEO2", int boxCount, int vertCount, int triCount,
+  boxes: float kind (0 wall, 1 prop), cx,cy,cz, sx,sy,sz, qx,qy,qz,qw   (Unity world space, size already scaled)
   floor verts: float x,y,z ; floor tris: uint32 a,b,c
+
+The model is drawn as a readable floor plan, not the raw collision soup:
+  floors   the walk map, minus rooftops and strips outside the walls (pieces not reachable from the player
+           spawns through any door, unless loot or a container sits on them)
+  walls    upright thin collision boxes next to a floor, cut to 2.4 m above each floor they stand on, so every
+           floor reads like a plan from above and no ceiling or roof hides it
+  props    only big furniture and machines (footprint over 0.6 m both ways), cut to 1.0 m above their floor
+  outline  the edges of the walk map (room shapes, ledges), minus navmesh tile seams and the small rings
+           around furniture: after the triangles, int segCount, then float x0,y0,z0,x1,y1,z1 per segment
 """
 import argparse, json, os, struct, sys
 import numpy as np
@@ -62,10 +71,120 @@ def pick_boxes(boxes, layers, walk_lo=None, walk_hi=None):
     return b[np.sort(first)]
 
 
+def keep_floors(V, I, doors, spawns, anchors):
+    """Walk-map pieces joined through every door; keep the ones the spawns reach, plus any with loot on them."""
+    from scipy.spatial import cKDTree
+    T, nbr, cent, _ = navgraph.build(V, I)
+    comp, _ = navgraph.components(nbr)
+    kd = cKDTree(cent)
+    par = list(range(comp.max() + 1))
+    def f(x):
+        while par[x] != x: par[x] = par[par[x]]; x = par[x]
+        return x
+    for d in doors:
+        if d["type"].split(".")[-1] not in ("Door", "KeycardDoor"): continue
+        c = np.array(d.get("boundsCenter") or d["pos"], float); s = np.array(d.get("boundsSize") or [1, 2, 1], float)
+        r = max(s[0], s[2]) / 2 + 1.6; b = c[1] - min(1.0, s[1] / 2 + 0.6)
+        g = sorted({int(comp[i]) for i in kd.query_ball_point(c, r + 2.0)
+                    if abs(cent[i][0] - c[0]) < r and abs(cent[i][2] - c[2]) < r and -1.2 < cent[i][1] - b < 1.0})
+        for x in g[1:]: par[f(x)] = f(g[0])
+    root = np.array([f(x) for x in range(len(par))])
+    keep = set()
+    for p in spawns:
+        dd, i = kd.query(p)
+        if dd < 3.5: keep.add(int(root[comp[i]]))
+    for p in anchors:   # loot or a container sits on it (within 2.5 m, at or below the item)
+        dd, ix = kd.query(p, k=8)
+        for d_, i in zip(dd, ix):
+            if d_ < 2.5 and cent[i][1] <= p[1] + 0.6: keep.add(int(root[comp[i]])); break
+    if not keep: return V, I
+    m = np.isin(root[comp], list(keep))
+    return V, I[m]
+
+
+def plan_boxes(b, Vf, If):
+    """Walls and big props, cut at a readable height above each floor they stand on (see module doc)."""
+    from scipy.spatial import cKDTree
+    cent = Vf[If].mean(1); kd = cKDTree(cent[:, [0, 2]])
+    q = b['q'].astype(np.float64); x, y, z, w = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    R = np.stack([np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], 1),
+                  np.stack([2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], 1),
+                  np.stack([2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)], 1)], 1)
+    up = np.abs(R[:, 1, :]); k = up.argmax(1); upright = up.max(1) > 0.97
+    s = b['s'].astype(np.float64); n = len(b)
+    h = s[np.arange(n), k]
+    hor = np.sort(np.where(np.eye(3)[k] > 0, np.inf, s), axis=1)[:, :2]
+    thin, longd = hor[:, 0], hor[:, 1]
+    wall = upright & (thin < 0.7) & (h >= 1.4) & (longd >= 0.6)
+    prop = upright & ~wall & (thin >= 0.6) & (h >= 0.5) & (h < 6)
+    out, kinds = [], []
+    for i in np.where(wall | prop)[0]:
+        c = b['c'][i].astype(np.float64); y0, y1 = c[1] - h[i] / 2, c[1] + h[i] / 2
+        # floors near the box: sample its footprint (long axis) and look 1.2 m around
+        la = np.argmax(np.where(np.arange(3) == k[i], -1, s[i]))
+        ax = R[i][:, la]; half = s[i][la] / 2
+        pts = [c[[0, 2]] + ax[[0, 2]] * t for t in np.linspace(-half, half, max(2, int(half / 1.5) + 2))]
+        ys = set()
+        for p in pts:
+            for j in kd.query_ball_point(p, 1.2): ys.add(round(float(cent[j][1]), 1))
+        ys = sorted(v for v in ys if y0 - 0.6 <= v <= y1 - 0.3)
+        levels = []
+        for v in ys:
+            if not levels or v - levels[-1] > 1.6: levels.append(v)
+        cap = 2.4 if wall[i] else 1.0
+        for f in levels:
+            lo = max(y0, f - 0.15); hi = min(y1, f + cap)
+            if wall[i] and f > y0 + 0.6 and hi - lo < 0.5: continue
+            if hi - lo < 0.3: continue
+            rec = b[i].copy(); rec['c'][1] = (lo + hi) / 2
+            ss = rec['s'].copy(); ss[k[i]] = hi - lo; rec['s'] = ss
+            out.append(rec); kinds.append(0 if wall[i] else 1)
+    return np.array(kinds, np.float32), np.array(out, dtype=b.dtype)
+
+
+def outline(V, I, min_loop=6.0):
+    """Boundary edges of the walk map, minus tile seams (another boundary edge lies along it) and loops
+    shorter than min_loop metres (holes round furniture and pillars)."""
+    from scipy.spatial import cKDTree
+    cnt = {}
+    for t in I:
+        for u, v in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])):
+            k = (min(u, v), max(u, v)); cnt[k] = cnt.get(k, 0) + 1
+    E = np.array([k for k, n in cnt.items() if n == 1], int).reshape(-1, 2)
+    if not len(E): return np.zeros((0, 6))
+    a, b = V[E[:, 0]], V[E[:, 1]]
+    d = b - a; L = np.linalg.norm(d, axis=1); u = d / np.maximum(L, 1e-9)[:, None]
+    # seams: sample points along each edge; if a point sits on another collinear boundary edge, it's a seam
+    seam = np.zeros(len(E), bool)
+    samp, own = [], []
+    for i in range(len(E)):
+        m = max(2, int(L[i] / 0.25) + 1)
+        for t in np.linspace(0.15, 0.85, m): samp.append(a[i] + d[i] * t); own.append(i)
+    samp = np.array(samp); own = np.array(own)
+    kd = cKDTree(samp)
+    for i, j in kd.query_pairs(0.06):
+        ei, ej = own[i], own[j]
+        if ei != ej and abs(np.dot(u[ei], u[ej])) > 0.98: seam[ei] = seam[ej] = True
+    E, L, a, b = E[~seam], L[~seam], a[~seam], b[~seam]
+    # loops: union the edges' vertices, drop short loops
+    par = {}
+    def f(x):
+        par.setdefault(x, x)
+        while par[x] != x: par[x] = par[par[x]]; x = par[x]
+        return x
+    for x, y in E: par[f(x)] = f(y)
+    root = np.array([f(x) for x, _ in E])
+    tot = {}
+    for r, l in zip(root, L): tot[r] = tot.get(r, 0) + l
+    keep = np.array([tot[r] >= min_loop for r in root])
+    return np.concatenate([a[keep], b[keep]], axis=1)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dump", required=True); ap.add_argument("--db", required=True)
     ap.add_argument("--tdev-exits", required=True); ap.add_argument("--out", required=True)
+    ap.add_argument("--loot", help="data/<map>.json: walk pieces with loot on them are kept even if no door joins them")
     a = ap.parse_args()
     meta = json.load(open(os.path.join(a.dump, "meta.json")))
     mid = meta["map"]
@@ -75,18 +194,30 @@ def main():
 
     # ---- model
     V, I = navgraph.load_nav(os.path.join(a.dump, "navmesh.bin"))
+    loot_pts = np.array([p[:3] for p in json.load(open(a.loot))["points"]]) if a.loot else np.zeros((0, 3))
+    cont_pts = np.array([c["pos"] for c in json.load(open(os.path.join(a.dump, "containers.json")))]).reshape(-1, 3)
+    base = os.path.join(a.db, "locations", mid, "base.json")
+    spawns = [[s["Position"][k] for k in "xyz"] for s in json.load(open(base))["SpawnPointParams"]
+              if "Player" in s.get("Categories", [])] if os.path.exists(base) else []
+    doors_raw = json.load(open(os.path.join(a.dump, "doors.json")))
+    Vf, If = keep_floors(V, I, doors_raw, spawns, np.concatenate([loot_pts, cont_pts]))
     boxes = pick_boxes(load_coll(os.path.join(a.dump, "colliders.bin")), layers, V.min(0), V.max(0))
-    key = np.round(V / 0.02).astype(np.int64)
+    kinds, boxes = plan_boxes(boxes, Vf, If)
+    key = np.round(Vf / 0.02).astype(np.int64)
     uk, first, inv = np.unique(key, axis=0, return_index=True, return_inverse=True)
-    Vw = V[first]; Iw = inv.ravel()[I]
+    Vw = Vf[first]; Iw = inv.ravel()[If]
     Iw = Iw[(Iw[:, 0] != Iw[:, 1]) & (Iw[:, 1] != Iw[:, 2]) & (Iw[:, 0] != Iw[:, 2])]
     path = os.path.join(a.out, f"{mid}-geo.bin")
     with open(path, "wb") as f:
-        f.write(b"GEO1"); f.write(struct.pack("<iii", len(boxes), len(Vw), len(Iw)))
-        out = np.zeros((len(boxes), 10), np.float32)
-        out[:, 0:3] = boxes['c']; out[:, 3:6] = boxes['s']; out[:, 6:10] = boxes['q']
+        f.write(b"GEO2"); f.write(struct.pack("<iii", len(boxes), len(Vw), len(Iw)))
+        out = np.zeros((len(boxes), 11), np.float32)
+        out[:, 0] = kinds; out[:, 1:4] = boxes['c']; out[:, 4:7] = boxes['s']; out[:, 7:11] = boxes['q']
         f.write(out.tobytes()); f.write(Vw.astype(np.float32).tobytes()); f.write(Iw.astype(np.uint32).tobytes())
-    print(f"{mid}: {len(boxes)} wall/floor shapes, {len(Iw)} walk triangles -> {os.path.getsize(path)/1024:.0f} KB")
+        segs = outline(Vw, Iw)
+        f.write(struct.pack("<i", len(segs))); f.write(segs.astype(np.float32).tobytes())
+    print(f"  outline segments: {len(segs)}")
+    print(f"{mid}: {int((kinds == 0).sum())} wall pieces, {int((kinds == 1).sum())} props, {len(Iw)} floor triangles "
+          f"(of {len(I)}) -> {os.path.getsize(path)/1024:.0f} KB")
 
     # ---- doors
     doors = []

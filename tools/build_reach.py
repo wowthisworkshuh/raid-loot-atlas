@@ -11,7 +11,8 @@ Usage: python build_reach.py --dump <dump/laboratory> --db <SPT database> --loot
 Writes maps/<loot map id>-reach.json:
   start   room ids the player spawns are in
   gates   [roomA, roomB, doorId, key tpl or "", "key" | "breach" | "sealed"]
-  pt      room id per loose-loot spot (-1: not on the walk map, or a room no door leads to: always shown)
+  pt      room id per loose-loot spot (-1: not on the walk map, or a room no door leads to: always shown;
+          -2: more than 15 m from any walk map, i.e. outside the playable map: not drawn or counted)
   ct      {container id: room id}
 """
 import argparse, json, os, sys, collections
@@ -107,8 +108,10 @@ def main():
         x = st.pop()
         for y in adj[x]:
             if y not in seen: seen.add(y); st.append(y)
+    kd_all = cKDTree(V[I].mean(1))
     pt = []
     for p in loot["points"]:
+        if kd_all.query(p[:3])[0] > 15: pt.append(-2); continue
         r = room_at(p[:3]); pt.append(r if r in seen else -1)
     ct = {}
     for c in json.load(open(os.path.join(a.dump, "containers.json"))):
@@ -130,7 +133,8 @@ def main():
                 if y not in ok: ok.add(y); st.append(y)
         return ok
     base_ok = reach(set())
-    free = sum(1 for r in pt if r < 0 or r in base_ok)
+    free = sum(1 for r in pt if r == -1 or r in base_ok)
+    print(f"  {pt.count(-2)} loose spots are outside the playable map (more than 15 m from any walk map)")
     print(f"{lid}: {len(set(room.tolist()))} rooms, {len(gates)} gates, spawns in {len(starts)} room(s) "
           f"({sum(start.values())}/{len(sp)} spawns placed); loot spots reachable without keys {free}/{len(pt)}")
     names = json.load(open(os.path.join(a.db, "locales/global/en.json"), encoding="utf-8"))
