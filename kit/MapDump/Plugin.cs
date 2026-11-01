@@ -71,7 +71,7 @@ namespace SurvivalPack.MapDump
             _sessionMaps = Config.Bind("Session", "Maps", "factory4_day,bigmap,woods,shoreline,interchange,lighthouse,rezervbase,sandbox,laboratory,labyrinth", "Maps the session loads, in order (maps that already have scan.bin are skipped).");
             _mapNames = Config.Bind("Session", "Map names on screen", "factory4_day=Factory,bigmap=Customs,woods=Woods,shoreline=Shoreline,interchange=Interchange,lighthouse=Lighthouse,rezervbase=Reserve,sandbox=Ground Zero,laboratory=The Lab,labyrinth=Labyrinth", "How each map is labelled on the map selection screen.");
             _sideButton = Config.Bind("Session", "Side button", "PMC", "Button clicked on the side selection screen (PMC or SCAV).");
-            _menuButtons = Config.Bind("Session", "Menu buttons", "Host raid;Start;Ready;Next;Escape from Tarkov;Back to main menu",
+            _menuButtons = Config.Bind("Session", "Menu buttons", "Host raid;Start;Next;Ready;Escape from Tarkov;Back to main menu",
                 "Buttons the session clicks to move on, first match wins, separated by ;. The map is clicked first on the map screen, and the side button on the side screen.");
             Logger.LogInfo("SurvivalPack.MapDump 0.3.0 ready (Ctrl+F10 in raid, Ctrl+F11 in the menu for an auto session)");
         }
@@ -225,6 +225,9 @@ namespace SurvivalPack.MapDump
                     return;
                 }
                 if (_mapClickedAt < 0 || now - _mapClickedAt > 6f) { Click(mine.go, mine.text); _mapClickedAt = now; return; }
+                // map chosen: Next (Ready skips Fika's raid screen and is often greyed out here)
+                var next = texts.FirstOrDefault(t => t.text == "NEXT");
+                if (next.go != null && now - _mapClickedAt > 1.2f && Usable("NEXT", texts)) { Click(next.go, "NEXT"); return; }
             }
             else { _onMapScreenSince = -1; _mapClickedAt = -1; }
 
@@ -236,7 +239,7 @@ namespace SurvivalPack.MapDump
             foreach (var b in _menuButtons.Value.Split(';').Select(Norm).Where(b => b.Length > 0))
             {
                 var hit = texts.FirstOrDefault(t => t.text == b);
-                if (hit.go == null) continue;
+                if (hit.go == null || !Usable(b, texts)) continue;
                 Click(hit.go, b);
                 _menuIdleSince = now;
                 return;
@@ -246,6 +249,19 @@ namespace SurvivalPack.MapDump
                 Say($"Auto session stuck: no button to press here (next map {DisplayName(target)}). Click on yourself; it picks up again. Ctrl+F9 writes the texts on screen for a fix.");
                 _menuIdleSince = now;
             }
+        }
+
+        // a button that's clicked again and again on an unchanged screen is greyed out: try the next one for a while
+        string _screenSig; int _sameClicks; readonly Dictionary<string, float> _skipUntil = new Dictionary<string, float>();
+        bool Usable(string button, List<(string text, GameObject go)> texts)
+        {
+            float now = Time.realtimeSinceStartup;
+            if (_skipUntil.TryGetValue(button, out var until) && now < until) return false;
+            var sig = string.Join("|", texts.Select(t => t.text).Distinct().OrderBy(x => x).Take(40));
+            if (button == _lastClicked && sig == _screenSig) { if (++_sameClicks >= 3) { _skipUntil[button] = now + 20f; _sameClicks = 0; Logger.LogInfo($"Auto session: {button} does nothing here, trying the next button"); return false; } }
+            else _sameClicks = 0;
+            _screenSig = sig;
+            return true;
         }
 
         void Click(GameObject go, string what)
