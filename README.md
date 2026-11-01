@@ -4,7 +4,7 @@ Where loot spawns on every map of our SPT server, and how likely it is each raid
 
 **Open it:** https://wowthisworkshuh.github.io/raid-loot-atlas/
 
-Loot search and results are on the left; map controls (map, floors, what to show, height range) are on the right. Pick a map, search an item (or pick a loot type and a minimum value), and the spots light up: the brighter and bigger the glow, the better the odds. The numbered pins are the five best areas. Hover a dot to see everything that can spawn there. Extracts (PMC, Scav, both) and transits show as colored markers, with place names on the buildings; toggle them, and the loot glow and hotspot pins, under "Show on map". On Factory, Labs, Interchange, Ground Zero and Reserve, the floor buttons at the bottom of the map show one floor at a time: roofs and higher floors are cut away and only that floor's loot, extracts and names show. Each extract pillar has a dot at the extract's own height. The Height range sliders do the same for any map by hand.
+Loot search, results and the loot run are on the left; map controls (map, floors, what to show, height range) are on the right. Pick a map, search an item (or pick a loot type and a minimum value), and the spots light up: the brighter and bigger the glow, the better the odds. The numbered pins are the five best areas. Hover a dot to see everything that can spawn there. Extracts (PMC, Scav, both) and transits show as colored markers, with place names on the buildings; toggle them, and the loot glow and hotspot pins, under "Show on map". On Factory, Labs, Interchange, Ground Zero and Reserve, the floor buttons at the bottom of the map show one floor at a time: roofs and higher floors are cut away and only that floor's loot, extracts and names show. Each extract pillar has a dot at the extract's own height. The Height range sliders do the same for any map by hand.
 
 ## The map models
 
@@ -36,7 +36,7 @@ Place names come from tarkov.dev. Loot spots more than 15 m from the walk map (F
 | Maps built from the map dumps + fan maps | Done for every map except the Labyrinth (needs a dump) and Streets |
 | Container positions on the map | Done (every dumped map) |
 | Locked doors, My keys, key values, suggested keys, only-reachable loot | Done (every dumped map) |
-| Loot runs | To do |
+| Loot runs | Done (every dumped map): pick a spawn, the route goes through the top stops of your search in the shortest order (exact) to the nearest extract, through doors you have keys for |
 | **Streets of Tarkov** | **To do** (biggest map; done last) |
 
 ## Map dump: walkable areas, locked doors, keys and containers (kit/MapDump)
@@ -59,7 +59,7 @@ It only reads; nothing in the raid changes.
 
 What it powers, once the dumps are in:
 
-- **Loot run:** pick your spawn and the route goes through the top hotspots for your current loot search in the shortest possible order (solved exactly over the walkable map), then to whichever extract or transit finishes it shortest. Every extract is open from every spawn on this server and raids have no time limit, so only the path matters. The route lists the keys it needs at each locked door.
+- **Loot run** (`tools/build_paths.py` → `maps/<id>-paths.bin/json`): the walk map grouped into small areas (2.5 m indoors, 7 m outdoors) joined where you can walk, plus every door with its key. Pick your spawn (or click a spawn dot) and the route goes through the top stops for your current loot search, loose loot and containers, in the shortest possible order (Held-Karp, exact), then to whichever extract or transit finishes it shortest. Every extract is open from every spawn on this server and raids have no time limit, so only the path matters. The route lists the keys it needs at each locked door.
 - **My keys:** tell the map which keys you have. Doors show green if you have the key and red if you don't, and the loot glow and routes only use rooms you can get into.
 - **Key values:** for each key, what loot its rooms add to what you can already reach, on average per raid, at handbook prices. Rooms come from `tools/build_reach.py`: the walk map's pieces joined through every unlocked door, with locked doors as gates between them. Rooms the walk map doesn't reach (some vaults have no bot walk map inside) show as "Rooms not mapped" and their loot always shows.
 - **Suggested keys:** the keys per map whose rooms are worth the most.

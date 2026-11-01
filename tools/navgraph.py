@@ -15,14 +15,14 @@ def build(V, I, weld=0.02, seam=0.06):
     T = inv[I]
     n = len(T)
     nbr = [set() for _ in range(n)]
-    owner = {}
+    owner = {}   # edge -> triangles on it (usually 1 or 2; more where pieces meet)
     for t, (a, b, c) in enumerate(T):
         for u, v in ((a, b), (b, c), (c, a)):
             k = (min(u, v), max(u, v))
-            if k in owner:
-                o = owner[k]; nbr[t].add(o); nbr[o].add(t); owner[k] = -1
-            else:
-                owner[k] = t
+            lst = owner.setdefault(k, [])
+            for o in lst: nbr[t].add(o); nbr[o].add(t)
+            lst.append(t)
+    owner = {k: (v[0] if len(v) == 1 else -1) for k, v in owner.items()}
     # boundary edges: owned by exactly one triangle
     P = V[I]  # per-triangle corner positions (unwelded is fine)
     bnd = []

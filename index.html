@@ -23,6 +23,7 @@
   --faint: #5b6770;       /* tertiary */
   --glow: #ff8a2a;        /* loot glow, the one accent */
   --cont: #8fd6ea;        /* container diamonds */
+  --route: #ff5fd2;       /* loot run */
   --glow-hot: #ffd27a;    /* glow core */
   --glow-ink: #1a0d02;    /* text on glow */
   --cold: #6fb7c9;        /* containers, secondary data */
@@ -134,6 +135,25 @@ select { width: 100%; background: var(--raise); border: 1px solid var(--line); b
 .badge.warn { color: var(--todo); border-color: color-mix(in srgb, var(--todo) 40%, var(--line)); }
 .help { position: absolute; bottom: 12px; right: max(12px, env(safe-area-inset-right, 0px)); font-size: 11px; color: var(--faint); pointer-events: none; text-align: right; }
 .labels { position: absolute; inset: 0; pointer-events: none; }
+.rpin { position: absolute; transform: translate(-50%, -50%); display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  background: var(--route); color: #160612; font: 700 11px/1 var(--font-body); box-shadow: 0 0 0 2px rgba(0,0,0,.55); white-space: nowrap; }
+.rpin.key { background: var(--bg); color: var(--door-need); border: 1px solid var(--door-need); font-weight: 600; }
+.rpin.key.ok { color: var(--door-ok); border-color: var(--door-ok); }
+.rpin.end { background: var(--exit-pmc); color: #04140c; }
+.run-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.run-row { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.run-row select { grid-column: 2 / 4; }
+.run-row output { font-variant-numeric: tabular-nums; color: var(--fg); min-width: 18px; text-align: right; }
+.run-total { display: flex; gap: 14px; margin: 4px 0 10px; }
+.run-total b { font-size: 18px; color: var(--route); font-family: var(--font-display); }
+.run-total span { font-size: 11px; color: var(--muted); display: block; }
+.run-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.run-steps li { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.run-steps li i { font-style: normal; font-weight: 700; color: var(--route); text-align: center; }
+.run-steps li.door i { color: var(--door-need); } .run-steps li.door.ok i { color: var(--door-ok); }
+.run-steps li small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.run-keys { margin-top: 10px; font-size: 12px; }
+.run-keys b { color: var(--door-need); }
 .pin {
   position: absolute; transform: translate(-50%, calc(-100% - 10px)); display: flex; align-items: center; gap: 6px;
   background: rgba(14, 16, 18, .88); border: 1px solid color-mix(in srgb, var(--glow) 70%, transparent); border-radius: 999px;
@@ -260,6 +280,19 @@ body { margin: 0; }
 
       <section class="selection" id="selection" aria-live="polite"></section>
 
+      <section id="run-sec" hidden>
+        <details class="drop" id="run-drop">
+          <summary><span class="label">Loot run</span><span class="sum" id="run-sum"></span></summary>
+          <div class="run-form">
+            <label class="run-row"><span>Spawn</span><select id="run-spawn" aria-label="Spawn"></select></label>
+            <p class="note">Or click a spawn dot on the map.</p>
+            <label class="run-row"><span>Stops</span><input type="range" id="run-n" min="2" max="12" step="1" value="6"><output id="run-n-o">6</output></label>
+            <div class="toggles"><button class="chip" id="run-anykey" aria-pressed="false" style="--c: var(--door-need)"><i></i>Use keys I don't have</button></div>
+          </div>
+          <div id="run-out" aria-live="polite"></div>
+        </details>
+      </section>
+
       <section>
         <p class="label" id="list-label">Items</p>
         <div class="list" id="list"></div>
@@ -278,10 +311,11 @@ body { margin: 0; }
     <canvas id="c"></canvas>
     <div class="marks" id="marks"></div>
     <div class="labels" id="labels"></div>
+    <div class="labels" id="runmarks"></div>
     <div class="hud" id="hud"></div>
     <div class="tip" id="tip" hidden></div>
     <div class="loading" id="loading">Loading spawn data</div>
-    <div class="help">Drag to orbit · right-drag to pan · scroll to zoom · hover a dot for its loot</div>
+    <div class="help">Drag to move · right-drag to orbit · scroll to zoom · hover a dot for its loot</div>
   </main>
   <aside class="kit ctrl" aria-label="Map controls">
     <div class="kit-scroll">
@@ -385,6 +419,10 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x0b0f12, 0.0006);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 8000);
 const controls = new OrbitControls(camera, canvas);
+window.__atlas = { camera, controls }; // for screenshots and debugging
+// drag moves the map, right-drag orbits; one finger moves, two fingers zoom and turn
+controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
 controls.enableDamping = true; controls.dampingFactor = 0.08; controls.maxPolarAngle = Math.PI * 0.49; controls.screenSpacePanning = false;
 scene.add(new THREE.HemisphereLight(0xcfd8e0, 0x1a1e22, 1.1));
 const sun = new THREE.DirectionalLight(0xffffff, 1.2); sun.position.set(-300, 600, 200); scene.add(sun);
@@ -450,6 +488,10 @@ function resize() {
 new ResizeObserver(resize).observe(stage);
 
 // ---------- data ----------
+// every push stamps BUILD, so browsers never mix a cached old file with a new one (Pages caches 10 min)
+const BUILD = "202611010153";
+{ const f0 = window.fetch.bind(window);
+  window.fetch = (u, o) => f0(typeof u === "string" && /^(data|maps)\//.test(u) ? u + (u.includes("?") ? "&" : "?") + "v=" + BUILD : u, o); }
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
 function topCat(c) { if (TOP_OF[c]) return TOP_OF[c]; let x = c; while (CATS[x] && CATS[x][1]) x = CATS[x][1]; return (TOP_OF[c] = x); }
 
@@ -492,6 +534,7 @@ async function loadMap(id) {
   loadModel(id);
   loadContainers(id);
   loadReach(id);
+  loadPaths(id);
   updateOverlay();
   $("loading").hidden = true;
   refresh();
@@ -804,8 +847,8 @@ async function loadBlockout(id) {
     if (blockRoot) { scene.remove(blockRoot); blockRoot.traverse((o) => o.geometry?.dispose()); }
     const B = blockCache[bid];
     // maps with real terrain: fan-map ground layers + the dump's buildings together; indoor maps: the dump alone
-    if (B.geo && B.combo) { blockRoot = new THREE.Group(); blockRoot.add(buildBlockout(B), buildGeo(B.geo)); }
-    else blockRoot = B.geo ? buildGeo(B.geo) : buildBlockout(B);
+    if (B.geo && B.combo) { blockRoot = new THREE.Group(); blockRoot.add(buildBlockout(B), buildGeo(B.geo, B, bid)); }
+    else blockRoot = B.geo ? buildGeo(B.geo, B, bid) : buildBlockout(B);
     blockRoot.userData.axis = { ...AXIS };
     scene.add(blockRoot);
     // the game's own exits (dump) when we have them; place names always from tarkov.dev
@@ -817,20 +860,42 @@ async function loadBlockout(id) {
       if (!box.isEmpty()) frame(box);
     }
     hud(id, B.geo ? (B.combo ? "combo" : "dump") : "blockout");
+    if (PJ && PJ.map === id) renderRunForm(); // spawn names use the place names that just loaded
   } catch (e) { console.error(e); grid.visible = true; hud(id, "missing"); }
 }
 
 // Model from the game's own data (MapDump): low-poly collision shapes as grey blocks, the walk map as floor.
 // GEO3: floors and walls all traced from the game's walk map (tools/build_dump_assets.py)
-function buildGeo3(buf) {
+// floor colour by storey: ground floors keep the base colour, each storey up is lighter, below ground darker
+const FLOOR_LEVELS = [[0.11, 0.14, 0.17], [0.16, 0.20, 0.24], [0.23, 0.30, 0.37], [0.31, 0.40, 0.49], [0.41, 0.51, 0.61], [0.50, 0.60, 0.70]];
+const GROUND_BAND = { factory4_day: 1, laboratory: 1, interchange: 0, sandbox: 1, rezervbase: 1 };
+function storeyFn(B, bid) {
+  const G = B?.ground, bands = FLOORS[bid];
+  if (bands && (bid === "interchange" || !G?.kind)) { // the map's own floor bands (Interchange's three mall floors, indoor maps)
+    const g0 = GROUND_BAND[bid] ?? 0;
+    return (x, y, z) => { let i = bands.findIndex(([, lo, hi]) => y >= lo && y < hi); if (i < 0) i = y < bands[0][1] ? 0 : bands.length - 1; return i - g0; };
+  }
+  if (G?.kind) { // height above the real ground
+    const nx = G.nx, nz = G.nz;
+    const at = (x, z) => { const fx = Math.min(Math.max((x - G.x0) / G.dx, 0), nx - 1.001), fz = Math.min(Math.max((z - G.z0) / G.dz, 0), nz - 1.001);
+      const i = Math.floor(fz), j = Math.floor(fx), u = fz - i, v = fx - j, h = G.h;
+      return h[i * nx + j] * (1 - u) * (1 - v) + h[(i + 1) * nx + j] * u * (1 - v) + h[i * nx + j + 1] * (1 - u) * v + h[(i + 1) * nx + j + 1] * u * v; };
+    return (x, y, z) => { const dy = y - at(x, z); return dy < -2.2 ? -1 : Math.floor((dy + 1.2) / 3.3); };
+  }
+  return () => 0;
+}
+function buildGeo3(buf, B, bid) {
   const dv = new DataView(buf);
   const nw = dv.getInt32(4, true), nv = dv.getInt32(8, true), nt = dv.getInt32(12, true);
   const W = new Float32Array(buf, 16, nw * 7), verts = new Float32Array(buf, 16 + nw * 28, nv * 3), tris = new Uint32Array(buf, 16 + nw * 28 + nv * 12, nt * 3);
   const A = new Acc();
   const P = (x, y, z) => { const [a, , b] = toWorld(x, 0, z); return [a, y, b]; };
+  const storey = storeyFn(B, bid);
   for (let i = 0; i < nt; i++) {
     const a = tris[i * 3] * 3, b = tris[i * 3 + 1] * 3, c = tris[i * 3 + 2] * 3;
-    A.tri(P(verts[a], verts[a + 1] - 0.03, verts[a + 2]), P(verts[b], verts[b + 1] - 0.03, verts[b + 2]), P(verts[c], verts[c + 1] - 0.03, verts[c + 2]), DEV.floor, 1, 1);
+    const lv = storey((verts[a] + verts[b] + verts[c]) / 3, (verts[a + 1] + verts[b + 1] + verts[c + 1]) / 3, (verts[a + 2] + verts[b + 2] + verts[c + 2]) / 3);
+    const col = FLOOR_LEVELS[Math.max(0, Math.min(FLOOR_LEVELS.length - 1, lv + 1))];
+    A.tri(P(verts[a], verts[a + 1] - 0.03, verts[a + 2]), P(verts[b], verts[b + 1] - 0.03, verts[b + 2]), P(verts[c], verts[c + 1] - 0.03, verts[c + 2]), col, 1, 1);
   }
   const H = [2.4, 1.0, 0.9], T = [0.09, 0.05, 0.05];
   const SIDE = [DEV.planWall, DEV.rail, DEV.propSide], TOP = [DEV.wallTop, DEV.railTop, DEV.propTop];
@@ -849,9 +914,9 @@ function buildGeo3(buf) {
   }
   return A.mesh();
 }
-function buildGeo(buf) {
+function buildGeo(buf, B, bid) {
   const dv = new DataView(buf);
-  if (String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) === "GEO3") return buildGeo3(buf);
+  if (String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) === "GEO3") return buildGeo3(buf, B, bid);
   const v2 = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) === "GEO2", stride = v2 ? 11 : 10;
   const nb = dv.getInt32(4, true), nv = dv.getInt32(8, true), nt = dv.getInt32(12, true);
   const boxes = new Float32Array(buf, 16, nb * stride);
@@ -1242,6 +1307,7 @@ function refresh() {
   renderList(cand);
   renderContainers(set);
   renderKeys();
+  scheduleRun();
 }
 
 function renderSelection(active, cand) {
@@ -1356,6 +1422,211 @@ function pickFloor(i) {
   updateOverlay();
 }
 
+// ---------- loot run (maps/<id>-paths.bin + -paths.json from tools/build_paths.py) ----------
+// From the chosen spawn, visit the top stops of the current search (loose loot + containers) in the shortest
+// possible order (exact: Held-Karp over walking distances), then finish at whichever extract is nearest.
+// Every extract is open from every spawn on this server and raids have no time limit, so only distance counts.
+const RUN = { spawn: -1, n: 6, anyKey: false, open: false };
+try { Object.assign(RUN, JSON.parse(localStorage.getItem("atlas-run") || "{}"), { spawn: -1 }); } catch {}
+let PG = null, PJ = null, runObj = null, runMarks = [], spawnPts = null, runTimer = 0;
+const pathCache = {};
+async function loadPaths(id) {
+  PG = null; PJ = null; RUN.spawn = -1; clearRun(); $("run-sec").hidden = true;
+  const bid = MODEL_OF[id] || id;
+  try {
+    const [b, j] = await Promise.all([pathCache[bid] || fetch(`maps/${bid}-paths.bin`).then((r) => r.ok ? r.arrayBuffer() : null), fetch(`maps/${id}-paths.json`).then((r) => r.ok ? r.json() : null)]);
+    if (!b || !j || map.id !== id) return;
+    pathCache[bid] = b;
+    const dv = new DataView(b), n = dv.getInt32(4, true), m = dv.getInt32(8, true);
+    let o = 12; const pos = new Float32Array(b, o, n * 3); o += n * 12;
+    const ea = new Int32Array(b, o, m * 2); o += m * 8; const w = new Float32Array(b, o, m); o += m * 4;
+    const door = new Int16Array(b.slice(o, o + m * 2));
+    const deg = new Int32Array(n + 1); for (let e = 0; e < m; e++) { deg[ea[e * 2] + 1]++; deg[ea[e * 2 + 1] + 1]++; }
+    for (let i = 0; i < n; i++) deg[i + 1] += deg[i];
+    const fill = deg.slice(0, n), nb = new Int32Array(m * 2), ne = new Int32Array(m * 2);
+    for (let e = 0; e < m; e++) { const a = ea[e * 2], c = ea[e * 2 + 1]; nb[fill[a]] = c; ne[fill[a]++] = e; nb[fill[c]] = a; ne[fill[c]++] = e; }
+    PG = { n, pos, w, door, off: deg, nb, ne };
+    PJ = j;
+    $("run-sec").hidden = false;
+    renderRunForm(); buildSpawnPts();
+  } catch (e) { console.error(e); }
+}
+function edgeOK(e, keys) {
+  const d = PG.door[e]; if (d < 0) return true;
+  const [, key, kind] = PJ.doors[d];
+  return kind === "open" || kind === "breach" || (kind === "key" && (keys.has(key) || RUN.anyKey));
+}
+function dijkstra(src, keys) {
+  const n = PG.n, dist = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), pe = new Int32Array(n).fill(-1);
+  const heap = [[0, src]]; dist[src] = 0;
+  const push = (it) => { heap.push(it); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= it[0]) break; heap[i] = heap[p]; i = p; } heap[i] = it; };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { let i = 0; for (;;) { let c = 2 * i + 1; if (c >= heap.length) break; if (c + 1 < heap.length && heap[c + 1][0] < heap[c][0]) c++; if (heap[c][0] >= last[0]) break; heap[i] = heap[c]; i = c; } heap[i] = last; } return top; };
+  while (heap.length) {
+    const [d, u] = pop(); if (d > dist[u]) continue;
+    for (let k = PG.off[u]; k < PG.off[u + 1]; k++) {
+      const e = PG.ne[k]; if (!edgeOK(e, keys)) continue;
+      const v = PG.nb[k], nd = d + PG.w[e];
+      if (nd < dist[v]) { dist[v] = nd; prev[v] = u; pe[v] = e; push([nd, v]); }
+    }
+  }
+  return { dist, prev, pe };
+}
+// stops: the best areas of the current search, loose spots and (when shown) containers, a stop per ~10 m area
+function runStops(N) {
+  const cell = 10, floor = 3.5, cells = new Map();
+  const add = (x, y, z, c, node) => {
+    if (c <= 0 || node < 0) return;
+    const k = `${Math.floor(x / cell)},${Math.floor(y / floor)},${Math.floor(z / cell)}`;
+    const h = cells.get(k) || { s: 0, best: 0, node: -1, x, y, z }; h.s += c;
+    if (c > h.best) { h.best = c; h.node = node; h.x = x; h.y = y; h.z = z; }
+    cells.set(k, h);
+  };
+  for (let i = 0; i < chanceAt.length; i++) add(map.points[i][0], map.points[i][1], map.points[i][2], chanceAt[i], PJ.pt[i] ?? -1);
+  if (contChance) contData.forEach((c, i) => add(c.x, c.y, c.z, contChance[i], PJ.ct[c.id] ?? -1));
+  const out = [];
+  for (const h of [...cells.values()].sort((a, b) => b.s - a.s)) {
+    if (out.some((o) => Math.hypot(o.x - h.x, o.z - h.z) < cell * 1.6 && Math.abs(o.y - h.y) < 3)) continue;
+    out.push(h); if (out.length >= N) break;
+  }
+  return out;
+}
+function solveRun() {
+  clearRun();
+  if (!PG || RUN.spawn < 0) { renderRunOut(null); return; }
+  const sp = PJ.sp[RUN.spawn], start = sp[3];
+  if (start < 0) { renderRunOut({ err: "This spawn isn't on the walk map." }); return; }
+  const keys = MY_KEYS, from0 = dijkstra(start, keys);
+  let stops = runStops(RUN.n * 3).filter((h) => Number.isFinite(from0.dist[h.node]));
+  const blocked = runStops(RUN.n).filter((h) => !Number.isFinite(from0.dist[h.node])).length;
+  stops = stops.slice(0, RUN.n);
+  if (!stops.length) { renderRunOut({ err: "Nothing on this search can be reached from this spawn with your keys." }); return; }
+  const k = stops.length, trees = [from0, ...stops.map((h) => dijkstra(h.node, keys))];
+  const nodes = [start, ...stops.map((h) => h.node)];
+  const D = (a, b) => trees[a].dist[nodes[b]]; // a, b index into nodes (0 = spawn)
+  const exits = (map.exitsForRun || []);
+  const endCost = stops.map((_, j) => { let best = [Infinity, -1]; for (const [ei, node] of exits) { const d = trees[j + 1].dist[node]; if (d < best[0]) best = [d, ei]; } return best; });
+  // Held-Karp: dp[mask][j] = shortest walk from the spawn through the stops in mask, ending at stop j
+  const M = 1 << k, dp = new Float64Array(M * k).fill(Infinity), par = new Int8Array(M * k).fill(-1);
+  for (let j = 0; j < k; j++) dp[(1 << j) * k + j] = D(0, j + 1);
+  for (let mask = 1; mask < M; mask++) for (let j = 0; j < k; j++) {
+    const cur = dp[mask * k + j]; if (!(mask & (1 << j)) || cur === Infinity) continue;
+    for (let q = 0; q < k; q++) { if (mask & (1 << q)) continue; const nm = mask | (1 << q), v = cur + D(j + 1, q + 1); if (v < dp[nm * k + q]) { dp[nm * k + q] = v; par[nm * k + q] = j; } }
+  }
+  let best = Infinity, last = -1;
+  for (let j = 0; j < k; j++) { const v = dp[(M - 1) * k + j] + endCost[j][0]; if (v < best) { best = v; last = j; } }
+  if (last < 0 || best === Infinity) { renderRunOut({ err: "No extract can be reached from these stops with your keys." }); return; }
+  const order = []; for (let mask = M - 1, j = last; j >= 0;) { order.unshift(j); const pj = par[mask * k + j]; mask ^= 1 << j; j = pj; }
+  // walk it: area by area, noting the doors on the way
+  const legs = [], seq = [0, ...order.map((j) => j + 1)];
+  const walk = (tree, to) => { const ns = [], es = []; for (let v = to; v >= 0; v = tree.prev[v]) { ns.unshift(v); if (tree.pe[v] >= 0) es.unshift(tree.pe[v]); } return { ns, es }; };
+  for (let i = 1; i < seq.length; i++) legs.push(walk(trees[seq[i - 1]], nodes[seq[i]]));
+  const [ed, ei] = endCost[last]; const exitNode = exits.find((x) => x[0] === ei)[1];
+  legs.push(walk(trees[last + 1], exitNode));
+  drawRun(legs, order.map((j) => stops[j]), sp, ei, best, blocked);
+}
+function clearRun() {
+  if (runObj) { scene.remove(runObj); runObj.traverse((o) => o.geometry?.dispose()); runObj = null; }
+  $("runmarks").innerHTML = ""; runMarks = [];
+}
+const runMat = new THREE.MeshBasicMaterial({ color: 0xff5fd2, transparent: true, opacity: 0.92, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+function drawRun(legs, stops, sp, exitIdx, total, blocked) {
+  const P = (i) => { const [x, y, z] = toWorld(PG.pos[i * 3], PG.pos[i * 3 + 1] + 0.35, PG.pos[i * 3 + 2]); return new THREE.Vector3(x, y, z); };
+  const pts = []; for (const l of legs) for (const v of l.ns) { const p = P(v); if (!pts.length || pts[pts.length - 1].distanceTo(p) > 0.05) pts.push(p); }
+  const s0 = toWorld(sp[0], sp[1] + 0.35, sp[2]); pts.unshift(new THREE.Vector3(...s0));
+  // flat ribbon, 0.8 m wide, drawn over everything like a GPS line
+  const pos = [], hw = 0.4;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz) || 1, nx = -dz / L * hw, nz = dx / L * hw;
+    pos.push(a.x + nx, a.y, a.z + nz, b.x + nx, b.y, b.z + nz, b.x - nx, b.y, b.z - nz, a.x + nx, a.y, a.z + nz, b.x - nx, b.y, b.z - nz, a.x - nx, a.y, a.z - nz);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  runObj = new THREE.Mesh(g, runMat); runObj.renderOrder = 6; scene.add(runObj);
+  // markers: start, numbered stops, doors with their keys, the extract
+  const dump = blockCache[MODEL_OF[map.id] || map.id]?.dump, ex = dump?.exits?.[exitIdx];
+  const mark = (p, html, cls) => { const el = document.createElement("div"); el.className = "rpin " + (cls || ""); el.innerHTML = html; $("runmarks").appendChild(el); runMarks.push({ el, p }); };
+  mark(new THREE.Vector3(...s0).setY(s0[1] + 1.2), "S");
+  stops.forEach((h, i) => mark(new THREE.Vector3(...toWorld(h.x, h.y + 1.6, h.z)), String(i + 1)));
+  const steps = [], keysNeeded = new Map();
+  steps.push({ t: "start", label: `Spawn: ${spawnName(RUN.spawn)}` });
+  let run = 0;
+  legs.forEach((l, li) => {
+    for (const e of l.es) {
+      const d = PG.door[e]; if (d < 0) continue;
+      const [id, key, kind] = PJ.doors[d]; if (kind === "open") continue;
+      const door = dump?.doors?.find((x) => x.id === id), have = kind !== "key" || MY_KEYS.has(key);
+      const name = kind === "key" ? (door?.keyName || key) : "Breach";
+      if (kind === "key" && !have) keysNeeded.set(key, name);
+      if (door) mark(new THREE.Vector3(...toWorld(door.c[0], door.c[1] + 1.4, door.c[2])), esc(kind === "key" ? shortKey(name).replace(/^TerraGroup (?!Labs)/, "") : "Breach"), "key" + (have ? " ok" : ""));
+      steps.push({ t: "door", have, label: kind === "key" ? `Door: ${name}` : "Door: breach it" });
+    }
+    if (li < stops.length) steps.push({ t: "stop", i: li + 1, h: stops[li] });
+  });
+  if (ex) { mark(new THREE.Vector3(...toWorld(ex.x, ex.y + 2, ex.z)), "Exit", "end"); steps.push({ t: "exit", label: `Extract: ${ex.k === "t" ? "transit to " : ""}${ex.n}` }); }
+  renderRunOut({ total, steps, keysNeeded, blocked });
+}
+function spawnName(i) {
+  const s = PJ.sp[i], B = blockCache[MODEL_OF[map.id] || map.id];
+  let best = null, bd = 160;
+  for (const l of B?.labels || []) { const d = Math.hypot(l.x - s[0], l.z - s[2]); if (d < bd) { bd = d; best = l.n; } }
+  const side = { pmc: "PMC", scav: "Scav", any: "PMC/Scav" }[s[4]];
+  return `${best ? "near " + best : s[5] || "spawn"} (${side})`;
+}
+function renderRunForm() {
+  // one entry per place and side (the spawn nearest the group's middle); clicking a dot picks an exact spawn
+  const groups = new Map();
+  PJ.sp.forEach((sp, i) => { if (sp[3] < 0) return; const nm = spawnName(i); if (!groups.has(nm)) groups.set(nm, []); groups.get(nm).push(i); });
+  const opts = [...groups].sort((a, b) => a[0].localeCompare(b[0])).map(([nm, ids]) => {
+    const cx = ids.reduce((t, i) => t + PJ.sp[i][0], 0) / ids.length, cz = ids.reduce((t, i) => t + PJ.sp[i][2], 0) / ids.length;
+    const rep = ids.reduce((b, i) => Math.hypot(PJ.sp[i][0] - cx, PJ.sp[i][2] - cz) < Math.hypot(PJ.sp[b][0] - cx, PJ.sp[b][2] - cz) ? i : b, ids[0]);
+    return [rep, `${nm}${ids.length > 1 ? ` · ${ids.length} spawns` : ""}`];
+  });
+  map.spawnOpts = new Set(opts.map((o) => o[0]));
+  $("run-spawn").innerHTML = `<option value="-1">Choose a spawn</option>` + opts.map(([i, label]) => `<option value="${i}">${esc(label)}</option>`).join("")
+    + (RUN.spawn >= 0 && !map.spawnOpts.has(RUN.spawn) ? `<option value="${RUN.spawn}">Spawn you clicked, ${esc(spawnName(RUN.spawn))}</option>` : "");
+  $("run-spawn").value = String(RUN.spawn);
+  $("run-n").value = RUN.n; $("run-n-o").textContent = RUN.n;
+  $("run-anykey").setAttribute("aria-pressed", String(RUN.anyKey));
+  // the exits a run can end at: all of them (every extract is open from every spawn on this server)
+  map.exitsForRun = (PJ.ex || []).map((node, i) => [i, node]).filter(([, node]) => node >= 0);
+  if (RUN.spawn < 0) renderRunOut(null);
+}
+function renderRunOut(r) {
+  const sum = $("run-sum");
+  if (!r) { sum.innerHTML = `<span>Pick a spawn</span>`; $("run-out").innerHTML = `<p class="note">Choose where you spawn. The route goes through the best spots for your current search in the shortest possible order, then to the nearest extract. It only uses doors you have keys for, unless you allow other keys.</p>`; return; }
+  if (r.err) { sum.innerHTML = `<span>No route</span>`; $("run-out").innerHTML = `<p class="note">${esc(r.err)}</p>`; return; }
+  const stopsN = r.steps.filter((s) => s.t === "stop").length;
+  sum.innerHTML = `<span>${stopsN} stops · <b>${Math.round(r.total)} m</b></span>`;
+  const li = r.steps.map((s) => s.t === "stop"
+    ? `<li><i>${s.i}</i><span>${fmtPer(s.h.s)} of your search here</span><small>${Math.round(s.h.y)} m up</small></li>`
+    : s.t === "door" ? `<li class="door${s.have ? " ok" : ""}"><i>▮</i><span>${esc(s.label)}</span><small>${s.have ? "have" : "need"}</small></li>`
+    : `<li><i>${s.t === "start" ? "S" : "E"}</i><span>${esc(s.label)}</span><small></small></li>`).join("");
+  const keys = r.keysNeeded.size ? `<p class="run-keys">Keys this route needs that you haven't ticked: <b>${[...r.keysNeeded.values()].map(esc).join(", ")}</b></p>` : "";
+  const blocked = r.blocked ? `<p class="note">${r.blocked} of the top spots are behind doors you can't open, so the route skips them. Tick keys in My keys, or allow other keys.</p>` : "";
+  $("run-out").innerHTML = `<div class="run-total"><div><b>${Math.round(r.total)} m</b><span>walking, spawn to extract</span></div><div><b>${stopsN}</b><span>stops</span></div></div><ol class="run-steps">${li}</ol>${keys}${blocked}`;
+}
+function buildSpawnPts() {
+  if (spawnPts) { scene.remove(spawnPts); spawnPts.geometry.dispose(); spawnPts = null; }
+  const pos = [], col = [], on = [];
+  for (const s of PJ.sp) { pos.push(...toWorld(s[0], s[1] + 0.5, s[2])); const c = new THREE.Color(s[4] === "scav" ? 0xb79cff : 0x74c69d); col.push(c.r, c.g, c.b); on.push(1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.setAttribute("aOn", new THREE.Float32BufferAttribute(on, 1));
+  spawnPts = new THREE.Points(g, exitDotMat); spawnPts.renderOrder = 5; spawnPts.visible = $("run-drop").open; scene.add(spawnPts);
+}
+function scheduleRun() { clearTimeout(runTimer); if (PG && RUN.spawn >= 0) runTimer = setTimeout(solveRun, 120); }
+function saveRun() { try { localStorage.setItem("atlas-run", JSON.stringify({ n: RUN.n, anyKey: RUN.anyKey })); } catch {} }
+$("run-spawn").addEventListener("change", () => { RUN.spawn = +$("run-spawn").value; solveRun(); });
+$("run-n").addEventListener("input", () => { RUN.n = +$("run-n").value; $("run-n-o").textContent = RUN.n; saveRun(); scheduleRun(); });
+$("run-anykey").addEventListener("click", () => { RUN.anyKey = !RUN.anyKey; $("run-anykey").setAttribute("aria-pressed", String(RUN.anyKey)); saveRun(); scheduleRun(); });
+$("run-drop").addEventListener("toggle", () => { if (spawnPts) spawnPts.visible = $("run-drop").open; });
+// click a spawn dot to start there
+canvas.addEventListener("click", (ev) => {
+  if (!PJ || !$("run-drop").open) return;
+  const r = canvas.getBoundingClientRect(), mx = ev.clientX - r.left, my = ev.clientY - r.top; let best = -1, bd = 14;
+  PJ.sp.forEach((s, i) => { if (s[3] < 0) return; v3.set(...toWorld(s[0], s[1] + 0.5, s[2])).project(camera); if (v3.z > 1) return;
+    const d = Math.hypot((v3.x + 1) / 2 * r.width - mx, (1 - v3.y) / 2 * r.height - my); if (d < bd) { bd = d; best = i; } });
+  if (best >= 0) { RUN.spawn = best; renderRunForm(); solveRun(); }
+});
+
 // ---------- 2D map overlay (tarkov.dev SVG maps, CC BY-NC-SA 4.0) ----------
 // bounds and orientation as in tools/build_blockouts.py; mode 0 "s,t", 1 "t,1-s", 2 "1-t,s".
 // floors: the SVG layer for each floor button; outdoor maps keep the ground layer under an upper floor.
@@ -1386,6 +1657,11 @@ async function updateOverlay() {
       ovSvg[cfg.svg] ||= await (await fetch(`maps/svg/${cfg.svg}.svg`)).text();
       const doc = new DOMParser().parseFromString(ovSvg[cfg.svg], "image/svg+xml"), root = doc.documentElement;
       for (const id of cfg.all) { const g = doc.getElementById(id); if (g && !want.includes(id)) g.setAttribute("style", "display:none"); }
+      // clean-up: map borders, danger hatching, power lines, quest marks and direction arrows are clutter on a 3D map
+      const hide = doc.createElementNS("http://www.w3.org/2000/svg", "style");
+      hide.textContent = ".map_border,.danger,.danger_small,.powerline,.task,.shadow{filter:none}.map_border,.danger,.danger_small,.powerline,.task{display:none}";
+      root.appendChild(hide);
+      for (const g of doc.querySelectorAll("g[id]")) if (/^(Arrows|Map_Limit|limit|Border)$/i.test(g.id)) g.setAttribute("style", "display:none");
       const vb = root.getAttribute("viewBox").split(/[ ,]+/).map(Number);
       let w = 4096, h = Math.round(w * vb[3] / vb[2]); if (h > 4096) { h = 4096; w = Math.round(h * vb[2] / vb[3]); }
       root.setAttribute("width", w); root.setAttribute("height", h);
@@ -1505,6 +1781,11 @@ function tick() {
     if (vis) placed.push([x, y]);
     el.style.left = x + "px"; el.style.top = y + "px";
   });
+  for (const m of runMarks) { // loot-run markers sit on top of everything
+    v3.copy(m.p).project(camera);
+    const vis = v3.z < 1 && Math.abs(v3.x) < 1.05 && Math.abs(v3.y) < 1.05;
+    m.el.hidden = !vis; if (vis) { const x = ((v3.x + 1) / 2) * w, y = ((1 - v3.y) / 2) * h; m.el.style.left = x + "px"; m.el.style.top = y + "px"; placed.push([x, y]); }
+  }
   const lo = uniforms.uYMin.value, hi = uniforms.uYMax.value;
   for (const m of marks) {
     const on = m.kind === "names" ? SHOW.names : m.kind === "a" ? (SHOW.p || SHOW.s) : SHOW[m.kind];

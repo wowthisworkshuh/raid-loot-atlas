@@ -180,7 +180,47 @@ def outline(V, I, min_loop=6.0):
     return np.concatenate([a[keep], b[keep]], axis=1)
 
 
-def plan_walls(V, I, doors, push=0.3, min_loop=6.0, owner_ok=None):
+class Blockers:
+    """The game's collision shapes, indexed for 'how tall is whatever stands right here?'."""
+    def __init__(self, dump, cell=2.0):
+        layers = json.load(open(os.path.join(dump, "layers.json")))
+        b = load_coll(os.path.join(dump, "colliders.bin"))
+        want = [int(k) for k, v in layers.items() if v in ("LowPolyCollider", "Default", "HighPolyCollider", "DoorLowPolyCollider")]
+        b = b[np.isin(b['layer'], want)]
+        ext = world_extent(b)
+        shell = (ext[:, 0] > 12) & (ext[:, 2] > 12) & (ext[:, 1] > 4)   # bounds of a whole building's mesh: no use here
+        b = b[~shell]; ext = ext[~shell]
+        self.c = b['c'].astype(np.float64); self.h = b['s'].astype(np.float64) / 2
+        q = b['q'].astype(np.float64); x, y, z, w = q.T
+        self.R = np.stack([np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], 1),
+                           np.stack([2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], 1),
+                           np.stack([2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)], 1)], 1)
+        self.top = self.c[:, 1] + ext[:, 1] / 2; self.bot = self.c[:, 1] - ext[:, 1] / 2
+        lo = self.c - ext / 2; hi = self.c + ext / 2; self.cell = cell
+        from collections import defaultdict
+        g = defaultdict(list)
+        for k in range(len(self.c)):
+            if (hi[k, 0] - lo[k, 0]) * (hi[k, 2] - lo[k, 2]) > 4000: continue
+            for i in range(int(np.floor(lo[k, 0] / cell)), int(np.floor(hi[k, 0] / cell)) + 1):
+                for j in range(int(np.floor(lo[k, 2] / cell)), int(np.floor(hi[k, 2] / cell)) + 1):
+                    g[(i, j)].append(k)
+        self.g = {k: np.array(v) for k, v in g.items()}
+
+    def height(self, p, floor, margin=0.12):
+        """Height above `floor` of the tallest shape that stands on that floor (bottom below floor + 1 m) and
+        contains point p (x, z) within margin; 0 if nothing does."""
+        ks = self.g.get((int(np.floor(p[0] / self.cell)), int(np.floor(p[2] / self.cell))))
+        if ks is None: return 0.0
+        ks = ks[(self.bot[ks] < floor + 1.0) & (self.top[ks] > floor + 0.2)]
+        if not len(ks): return 0.0
+        d = np.array([p[0], floor + 0.5, p[2]]) - self.c[ks]
+        loc = np.einsum('nji,nj->ni', self.R[ks], d)   # into each box's own axes
+        h = self.h[ks]
+        inside = (np.abs(loc[:, 0]) <= h[:, 0] + margin) & (np.abs(loc[:, 2]) <= h[:, 2] + margin) & (np.abs(loc[:, 1]) <= h[:, 1] + 3.0)
+        return float((self.top[ks][inside] - floor).max()) if inside.any() else 0.0
+
+
+def plan_walls(V, I, doors, push=0.3, min_loop=6.0, owner_ok=None, blockers=None):
     """Walls traced from the walk map's edges, so every room, corridor and stairwell has walls that meet its
     floor exactly. Returns rows x0,y0,z0,x1,y1,z1,kind with kind 0 = wall (2.4 m), 1 = railing at a drop
     (1.0 m), 2 = furniture outline (a hole in the walk map under 6 m round, 0.9 m).
@@ -228,6 +268,13 @@ def plan_walls(V, I, doors, push=0.3, min_loop=6.0, owner_ok=None):
         p = mid[i] + nrm[i] * 0.8
         js = kd2.query_ball_point(p[[0, 2]], 0.7)
         if any(mid[i][1] - 6 < cent[j][1] < mid[i][1] - 0.6 for j in js): kind[i] = 1
+    # walls vs props: the walk map stops at crates, shelves and cars just like at walls. Look at what the game
+    # has just beyond each edge: 1.8 m or taller is a wall, lower is a prop (drawn as furniture)
+    if blockers is not None:
+        for i in np.where(keep & (kind == 0))[0]:
+            hs = [blockers.height(mid[i] + nrm[i] * dd, mid[i][1] - 0.1) for dd in (0.35, 0.6)]
+            h = max(hs)
+            if 0.0 < h < 1.8: kind[i] = 2
     # doorways
     db = []
     for dr in doors:
@@ -335,12 +382,13 @@ def main():
     Vw = Vf[first]; Iw = inv.ravel()[If]
     Iw = Iw[(Iw[:, 0] != Iw[:, 1]) & (Iw[:, 1] != Iw[:, 2]) & (Iw[:, 0] != Iw[:, 2])]
     outdoor = meta.get("terrains", 0) > 0 and a.svg
+    blockers = Blockers(a.dump)
     if outdoor:
         indoor = indoor_mask(Vw, Iw, a.dump, mid, a.svg)
-        walls, strips = plan_walls(Vw, Iw, doors_raw, owner_ok=indoor)
+        walls, strips = plan_walls(Vw, Iw, doors_raw, owner_ok=indoor, blockers=blockers)
         Iw = Iw[indoor]
     else:
-        walls, strips = plan_walls(Vw, Iw, doors_raw)
+        walls, strips = plan_walls(Vw, Iw, doors_raw, blockers=blockers)
     if len(strips):
         n0 = len(Vw); Vw = np.concatenate([Vw, strips.reshape(-1, 3)])
         q = n0 + np.arange(len(strips) * 4).reshape(-1, 4)

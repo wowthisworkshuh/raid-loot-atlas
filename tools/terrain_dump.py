@@ -66,21 +66,32 @@ def read(path):
     return gx, gz, hmin + q.astype(np.float64) * step, kind.copy()
 
 
-def carve(terrain_path, geo_path, below=0.25, near=1.2):
-    """Push the ground grid under building floors that sit near it, so the ground never shows through a
-    floor (no flicker where a ground floor and the terrain are at the same height)."""
+def carve(terrain_path, geo_path, below=0.15, near=1.2):
+    """Push the ground under building floors that sit near it, so the ground never shows through a floor.
+    Only ground points inside a floor triangle move, and only to just under that floor, so nothing is dug
+    out round the outside of buildings."""
     gx, gz, H, kind = read(terrain_path)
     b = open(geo_path, 'rb').read(); assert b[:4] == b'GEO3'
     nw, nv, nt = struct.unpack_from('<iii', b, 4); o = 16 + nw * 28
-    V = np.frombuffer(b, '<f4', nv * 3, o).reshape(-1, 3); I = np.frombuffer(b, '<u4', nt * 3, o + nv * 12).reshape(-1, 3)
+    V = np.frombuffer(b, '<f4', nv * 3, o).reshape(-1, 3).astype(np.float64); I = np.frombuffer(b, '<u4', nt * 3, o + nv * 12).reshape(-1, 3)
     P = V[I]; lo = P.min(1); hi = P.max(1)
     dx = gx[1] - gx[0]; dz = gz[1] - gz[0]; n = 0
     for t in range(len(I)):
-        j0 = max(0, int(np.floor((lo[t, 0] - gx[0]) / dx))); j1 = min(len(gx) - 1, int(np.ceil((hi[t, 0] - gx[0]) / dx)))
-        i0 = max(0, int(np.floor((lo[t, 2] - gz[0]) / dz))); i1 = min(len(gz) - 1, int(np.ceil((hi[t, 2] - gz[0]) / dz)))
+        j0 = max(0, int(np.ceil((lo[t, 0] - gx[0]) / dx))); j1 = min(len(gx) - 1, int(np.floor((hi[t, 0] - gx[0]) / dx)))
+        i0 = max(0, int(np.ceil((lo[t, 2] - gz[0]) / dz))); i1 = min(len(gz) - 1, int(np.floor((hi[t, 2] - gz[0]) / dz)))
         if j1 < j0 or i1 < i0: continue
-        sub = H[i0:i1 + 1, j0:j1 + 1]; y = lo[t, 1] - below
-        m = (sub > y) & (sub < hi[t, 1] + near)
-        if m.any(): sub[m] = y; n += int(m.sum())
+        X, Z = np.meshgrid(gx[j0:j1 + 1], gz[i0:i1 + 1])
+        a, b_, c = P[t]
+        # barycentric inside test and the floor's height at each ground point
+        v0, v1 = (b_ - a)[[0, 2]], (c - a)[[0, 2]]; den = v0[0] * v1[1] - v1[0] * v0[1]
+        if abs(den) < 1e-9: continue
+        px, pz = X - a[0], Z - a[2]
+        u = (px * v1[1] - v1[0] * pz) / den; v = (v0[0] * pz - px * v0[1]) / den
+        inside = (u >= -0.02) & (v >= -0.02) & (u + v <= 1.02)
+        if not inside.any(): continue
+        fy = a[1] + u * (b_[1] - a[1]) + v * (c[1] - a[1]) - below
+        sub = H[i0:i1 + 1, j0:j1 + 1]
+        m = inside & (sub > fy) & (sub < fy + near)
+        if m.any(): sub[m] = fy[m]; n += int(m.sum())
     write(terrain_path, gx, gz, H, kind)
     return n
