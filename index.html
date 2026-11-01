@@ -155,6 +155,25 @@ input[type=range] { accent-color: var(--khaki); }
 .run-steps li b { font-weight: 600; font-size: 14px; }
 .run-steps li .what { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
 .run-steps li small { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.run-steps li[data-i] { cursor: pointer; border-radius: 3px; margin: 0 -6px; padding-inline: 6px; }
+.run-steps li[data-i]:hover { background: var(--raise); }
+.run-steps li[aria-current="true"] { background: color-mix(in srgb, var(--route) 10%, transparent); }
+.run-steps li.start > i, .run-steps li.exit > i { border-radius: 3px; }
+.run-steps li.exit > i { border-color: var(--exit-pmc); color: var(--exit-pmc); }
+.run-steps li > i svg { width: 12px; height: 12px; }
+.walk-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 9px 12px; margin-bottom: 12px; cursor: pointer;
+  background: var(--route); color: #160612; border: 0; border-radius: 3px; font-weight: 700; font-stretch: var(--narrow); font-size: 15px; }
+.walk-btn svg { width: 14px; height: 14px; }
+.walkbar { left: 50%; transform: translateX(-50%); bottom: 14px; width: min(640px, calc(100% - 24px)); padding: 10px 12px; display: grid; gap: 8px; }
+.walkbar .next { font-size: 13.5px; color: var(--muted); min-height: 1.4em; }
+.walkbar .next b { color: var(--fg); font-weight: 600; }
+.walkbar .row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; }
+.walkbar input[type=range] { width: 100%; accent-color: var(--route); }
+.walkbar button { background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 5px 10px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+.walkbar button:hover { border-color: var(--faint); }
+.walkbar #walk-play { min-width: 64px; background: var(--route); color: #160612; border-color: var(--route); font-weight: 700; }
+.walkbar select { width: auto; padding: 5px 6px; font-size: 13px; }
+.rpin.start { background: var(--bg); color: var(--fg); border: 1.5px solid var(--fg); font-weight: 700; }
 .run-keys { margin-top: 12px; font-size: 13px; }
 .run-keys b { color: var(--door-need); font-weight: 600; }
 .toggles { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -262,6 +281,8 @@ input[type=range] { accent-color: var(--khaki); }
   .help { display: none; }
   .hud { right: 110px; }
   .floors-float { bottom: 10px; right: 10px; }
+  .walkbar .row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .walkbar .row select, .walkbar .row #walk-view { display: none; }
   .floors { flex-direction: row-reverse; flex-wrap: wrap; justify-content: flex-end; }
   .floors button { min-width: 0; padding: 5px 8px; border-left: 0; border-bottom: 2px solid transparent; }
   .floors button small { display: none; }
@@ -380,6 +401,16 @@ input[type=range] { accent-color: var(--khaki); }
     <div class="float floors-float" id="floors-sec" hidden>
       <div class="floors" id="floors" role="group" aria-label="Floor"></div>
     </div>
+    <div class="float walkbar" id="walkbar" hidden>
+      <div class="next" id="walk-next" aria-live="polite"></div>
+      <div class="row">
+        <button id="walk-play">Pause</button>
+        <input type="range" id="walk-pos" min="0" max="1000" value="0" aria-label="Position along the route">
+        <select id="walk-speed" aria-label="Speed"><option value="1">1× run</option><option value="2" selected>2×</option><option value="4">4×</option><option value="8">8×</option></select>
+        <button id="walk-view" aria-pressed="false">First person</button>
+        <button id="walk-exit">Done</button>
+      </div>
+    </div>
     <div class="tip" id="tip" hidden></div>
     <div class="loading" id="loading">Loading spawn data</div>
     <div class="help">Drag to move, right-drag to orbit, scroll to zoom. Hover a dot for its loot.</div>
@@ -445,6 +476,7 @@ scene.fog = new THREE.FogExp2(0x0b0f12, 0.0006);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 8000);
 const controls = new OrbitControls(camera, canvas);
 window.__atlas = { camera, controls }; // for screenshots and debugging
+controls.addEventListener("start", () => { camAnim = null; });
 // drag moves the map, right-drag orbits; one finger moves, two fingers zoom and turn
 controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
 controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
@@ -514,7 +546,7 @@ new ResizeObserver(resize).observe(stage);
 
 // ---------- data ----------
 // every push stamps BUILD, so browsers never mix a cached old file with a new one (Pages caches 10 min)
-const BUILD = "202611010235";
+const BUILD = "202611010247";
 { const f0 = window.fetch.bind(window);
   window.fetch = (u, o) => f0(typeof u === "string" && /^(data|maps)\//.test(u) ? u + (u.includes("?") ? "&" : "?") + "v=" + BUILD : u, o); }
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
@@ -1634,7 +1666,7 @@ function buildLandmarks(data) {
 // Every extract is open from every spawn on this server and raids have no time limit, so only distance counts.
 const RUN = { spawn: -1, goal: "value", t: { value: 50, bag: 24, count: 2 }, anyKey: false };
 try { const sv = JSON.parse(localStorage.getItem("atlas-run") || "{}"); if (sv.goal) RUN.goal = sv.goal; if (sv.t) Object.assign(RUN.t, sv.t); RUN.anyKey = !!sv.anyKey; } catch {}
-let PG = null, PJ = null, runObj = null, runMarks = [], spawnPts = null, runTimer = 0;
+let PG = null, PJ = null, runObj = null, runMarks = [], spawnPts = null, runTimer = 0, RUNPATH = null, RUNSTEPS = [];
 const pathCache = {};
 async function loadPaths(id) {
   PG = null; PJ = null; RUN.spawn = -1; clearRun(); $("run-sec").hidden = true;
@@ -1868,14 +1900,23 @@ function solveRun() {
   drawRun(legs, places, sp, ei, cost(route), sum);
 }
 function clearRun() {
+  if (WALK) stopWalk();
+  RUNPATH = null; RUNSTEPS = [];
   if (runObj) { scene.remove(runObj); runObj.traverse((o) => o.geometry?.dispose()); runObj = null; }
   $("runmarks").innerHTML = ""; runMarks = [];
 }
-const runMat = new THREE.MeshBasicMaterial({ color: 0xff5fd2, transparent: true, opacity: 0.92, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+// the route line shows through walls (like a GPS line) but is cut with the floors above you, like the model
+const runMat = new THREE.ShaderMaterial({
+  uniforms: { uYMax: devClip }, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
+  vertexShader: `varying float vY; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vY = w.y; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: `uniform float uYMax; varying float vY; void main(){ if (vY > uYMax + 0.6) discard; gl_FragColor = vec4(1.0, 0.373, 0.824, 0.92); }`,
+});
 function drawRun(legs, stops, sp, exitIdx, total, sum) {
   const P = (i) => { const [x, y, z] = toWorld(PG.pos[i * 3], PG.pos[i * 3 + 1] + 0.35, PG.pos[i * 3 + 2]); return new THREE.Vector3(x, y, z); };
-  const pts = []; for (const l of legs) for (const v of l.ns) { const p = P(v); if (!pts.length || pts[pts.length - 1].distanceTo(p) > 0.05) pts.push(p); }
-  const s0 = toWorld(sp[0], sp[1] + 0.35, sp[2]); pts.unshift(new THREE.Vector3(...s0));
+  const s0 = toWorld(sp[0], sp[1] + 0.35, sp[2]), pts = [new THREE.Vector3(...s0)], legEnd = [];
+  for (const l of legs) { for (const v of l.ns) { const p = P(v); if (pts[pts.length - 1].distanceTo(p) > 0.05) pts.push(p); } legEnd.push(pts.length - 1); }
+  const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
+  RUNPATH = { pts, cum, total: cum[cum.length - 1], legEnd, groups: [] };
   // flat ribbon, 0.8 m wide, drawn over everything like a GPS line
   const pos = [], hw = 0.4;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -1887,7 +1928,7 @@ function drawRun(legs, stops, sp, exitIdx, total, sum) {
   // markers: start, numbered stops, doors with their keys, the extract
   const dump = blockCache[MODEL_OF[map.id] || map.id]?.dump, ex = dump?.exits?.[exitIdx];
   const mark = (p, html, cls) => { const el = document.createElement("div"); el.className = "rpin " + (cls || ""); el.innerHTML = html; $("runmarks").appendChild(el); runMarks.push({ el, p }); };
-  mark(new THREE.Vector3(...s0).setY(s0[1] + 1.2), "S");
+  mark(new THREE.Vector3(...s0).setY(s0[1] + 1.2), "Start", "start");
   // locations: consecutive places in the same named place and floor
   const groups = [];
   stops.forEach((p, i) => { const loc = placeLoc(p), g = groups[groups.length - 1];
@@ -1903,7 +1944,7 @@ function drawRun(legs, stops, sp, exitIdx, total, sum) {
   });
   const groupAt = new Map(groups.map((g) => [g.first, g]));
   const steps = [], keysNeeded = new Map();
-  steps.push({ t: "start", label: `Spawn ${spawnName(RUN.spawn)}` });
+  steps.push({ t: "start", label: `Spawn ${spawnName(RUN.spawn)}`, focus: { x: sp[0], y: sp[1], z: sp[2], r: 22 } });
   legs.forEach((l, li) => {
     for (const e of l.es) {
       const d = PG.door[e]; if (d < 0) continue;
@@ -1912,11 +1953,16 @@ function drawRun(legs, stops, sp, exitIdx, total, sum) {
       const name = kind === "key" ? (door?.keyName || key) : "Breach";
       if (kind === "key" && !have) keysNeeded.set(key, name);
       if (door) mark(new THREE.Vector3(...toWorld(door.c[0], door.c[1] + 1.4, door.c[2])), esc(kind === "key" ? shortKey(name).replace(/^TerraGroup (?!Labs)/, "") : "Breach"), "key" + (have ? " ok" : ""));
-      steps.push({ t: "door", have, label: kind === "key" ? `Locked door: ${name}` : "Locked door: breach it" });
+      steps.push({ t: "door", have, label: kind === "key" ? `Locked door: ${name}` : "Locked door: breach it", focus: door ? { x: door.c[0], y: door.c[1] - 1, z: door.c[2], r: 12 } : null });
     }
-    if (groupAt.has(li)) steps.push({ t: "stop", g: groupAt.get(li) });
+    if (groupAt.has(li)) { const g = groupAt.get(li), xs = g.places.map((p) => p.x), zs = g.places.map((p) => p.z);
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+      const r = Math.max(14, Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs)) / 2 + 8);
+      RUNPATH.groups.push({ g, at: RUNPATH.cum[RUNPATH.legEnd[g.first]] });
+      steps.push({ t: "stop", g, focus: { x: cx, y: Math.min(...g.places.map((p) => p.y)), z: cz, r } }); }
   });
-  if (ex) { mark(new THREE.Vector3(...toWorld(ex.x, ex.y + 2, ex.z)), "Exit", "end"); steps.push({ t: "exit", label: `Extract at ${ex.k === "t" ? "transit to " : ""}${ex.n}` }); }
+  if (ex) { mark(new THREE.Vector3(...toWorld(ex.x, ex.y + 2, ex.z)), "Exit", "end"); steps.push({ t: "exit", label: `Extract at ${ex.k === "t" ? "transit to " : ""}${ex.n}`, focus: { x: ex.x, y: ex.y, z: ex.z, r: 22 } }); }
+  RUNSTEPS = steps;
   renderRunOut({ total, steps, keysNeeded, sum });
 }
 function spawnName(i) {
@@ -1953,13 +1999,16 @@ function renderRunOut(r) {
   const groups = r.steps.filter((s) => s.t === "stop").map((s) => s.g);
   sum.innerHTML = `<b>${Math.round(r.total)} m</b>`;
   const slotsTxt = (x) => x < 0.5 ? "under 1 slot" : `about ${Math.max(1, Math.round(x))} slot${Math.round(x) > 1 ? "s" : ""}`;
-  const li = r.steps.map((s) => {
+  const ICON = { start: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z" fill="currentColor"/></svg>`,
+    exit: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h6v11H3z M9 8h5 M11.5 5.5 14 8l-2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>` };
+  const li = r.steps.map((s, si) => {
+    const attrs = s.focus ? ` data-i="${si}" role="button" tabindex="0" title="Show on the map"` : "";
     if (s.t === "stop") { const g = s.g, parts = [g.spots && `${g.spots} spot${g.spots > 1 ? "s" : ""}`, g.boxes && `${g.boxes} container${g.boxes > 1 ? "s" : ""}`].filter(Boolean).join(" and ");
-      return `<li class="loc"><i>${g.n}</i><span><b>${g.loc.near ? "Near " : ""}${esc(g.loc.name)}</b>${g.loc.floor ? ` · ${esc(g.loc.floor)}` : ""}
+      return `<li class="loc"${attrs}><i>${g.n}</i><span><b>${g.loc.near ? "Near " : ""}${esc(g.loc.name)}</b>${g.loc.floor ? ` · ${esc(g.loc.floor)}` : ""}
         <span class="what">Check ${parts}. Something here ${oddsPhrase(g.pAny)}.</span>
         <span class="what">Best finds: ${esc(placeItems(g.members))}</span></span><small>~${fmtRub(Math.round(g.val))}</small></li>`; }
-    if (s.t === "door") return `<li class="door${s.have ? " ok" : ""}"><i>▮</i><span>${esc(s.label)}</span><small>${s.have ? "you have it" : "you need it"}</small></li>`;
-    return `<li><i>${s.t === "start" ? "S" : "E"}</i><span>${esc(s.label)}</span><small></small></li>`;
+    if (s.t === "door") return `<li class="door${s.have ? " ok" : ""}"${attrs}><i>▮</i><span>${esc(s.label)}</span><small>${s.have ? "you have it" : "you need it"}</small></li>`;
+    return `<li class="${s.t}"${attrs}><i>${ICON[s.t] || ""}</i><span>${esc(s.label)}</span><small></small></li>`;
   }).join("");
   const keys = r.keysNeeded.size ? `<p class="run-keys">Keys you'd need: <b>${[...r.keysNeeded.values()].map(esc).join(", ")}</b></p>` : "";
   let note = "";
@@ -1973,7 +2022,9 @@ function renderRunOut(r) {
     goal === "count" ? `<div><b>${fmtOdds(S.pAny)}</b><span>you find at least one</span></div>` : `<div><b>~${fmtRub(Math.round(S.val))}</b><span>loot on an average raid</span></div>`,
     goal === "bag" ? `<div><b>${Math.round(S.slots)} / ${target}</b><span>slots filled on average</span></div>` : `<div><b>${fmtOdds(S.pAny)}</b><span>you find something</span></div>`,
   ].join("");
-  $("run-out").innerHTML = `<div class="run-total">${totals}</div><p class="note">Looking for ${esc(what)}. Change the search to plan for something else.</p><ol class="run-steps">${li}</ol>${keys}${note}${blocked}`;
+  $("run-out").innerHTML = `<div class="run-total">${totals}</div>
+    <button class="walk-btn" id="walk-btn"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z" fill="currentColor"/></svg>Walk the route</button>
+    <p class="note">Looking for ${esc(what)}. Change the search to plan for something else. Click a step to see it on the map.</p><ol class="run-steps">${li}</ol>${keys}${note}${blocked}`;
 }
 function buildSpawnPts() {
   if (spawnPts) { scene.remove(spawnPts); spawnPts.geometry.dispose(); spawnPts = null; }
@@ -2005,6 +2056,88 @@ canvas.addEventListener("click", (ev) => {
     const d = Math.hypot((v3.x + 1) / 2 * r.width - mx, (1 - v3.y) / 2 * r.height - my); if (d < bd) { bd = d; best = i; } });
   if (best >= 0) { RUN.spawn = best; renderRunForm(); scheduleRun(); }
 });
+
+// ---------- camera moves: fly to a step, walk the route ----------
+let camAnim = null, WALK = null;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// fit a circle of radius r (metres) round a game-space point, keeping the current view direction but looking down enough
+function flyTo(x, y, z, r) {
+  const T = new THREE.Vector3(...toWorld(x, y, z));
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  const h = Math.hypot(dir.x, dir.z) || 1; if (dir.y < 0.6) { const k = Math.sqrt(1 - 0.36) / h; dir.set(dir.x * k, 0.6, dir.z * k); }
+  const dist = r / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.15;
+  const P2 = T.clone().add(dir.multiplyScalar(dist));
+  if (reduceMotion) { controls.target.copy(T); camera.position.copy(P2); return; }
+  camAnim = { t0: performance.now(), dur: 650, fT: controls.target.clone(), fP: camera.position.clone(), tT: T, tP: P2 };
+}
+function floorOf(y) { const list = FLOORS[MODEL_OF[map.id] || map.id]; return list ? list.findIndex(([, lo, hi]) => y >= lo && y < hi) : -1; }
+function focusStep(i) {
+  const st = RUNSTEPS[i]; if (!st?.focus) return;
+  if (WALK) stopWalk();
+  const f = st.focus, fi = floorOf(f.y + 0.5);
+  if (fi >= 0 && fi !== floorSel) pickFloor(fi);
+  flyTo(f.x, f.y, f.z, f.r);
+  document.querySelectorAll("#run-out li[data-i]").forEach((li) => li.setAttribute("aria-current", String(+li.dataset.i === i)));
+}
+$("run-out").addEventListener("click", (e) => {
+  if (e.target.closest("#walk-btn")) { startWalk(); return; }
+  const li = e.target.closest("li[data-i]"); if (li) focusStep(+li.dataset.i);
+});
+$("run-out").addEventListener("keydown", (e) => { const li = e.target.closest("li[data-i]"); if (li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); focusStep(+li.dataset.i); } });
+
+// walk the route: follow camera (default) or first person, cutting away everything above head height
+function pathAt(d) {
+  const { pts, cum } = RUNPATH; d = Math.max(0, Math.min(RUNPATH.total, d));
+  let lo = 0, hi = cum.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= d) lo = m; else hi = m; }
+  const seg = cum[hi] - cum[lo] || 1; return pts[lo].clone().lerp(pts[hi], (d - cum[lo]) / seg);
+}
+function startWalk() {
+  if (!RUNPATH || RUNPATH.total < 1) return;
+  camAnim = null;
+  WALK = { d: 0, playing: true, fp: false, saved: { T: controls.target.clone(), P: camera.position.clone(), floor: floorSel, map: map.id }, cam: null, look: null, last: performance.now() };
+  controls.enabled = false;
+  $("walkbar").hidden = false; document.querySelector(".help").hidden = true; $("walk-play").textContent = "Pause"; $("walk-view").setAttribute("aria-pressed", "false"); $("walk-view").textContent = "First person";
+  $("walk-play").focus();
+}
+function stopWalk() {
+  if (!WALK) return;
+  const sv = WALK.saved; WALK = null;
+  $("walkbar").hidden = true; document.querySelector(".help").hidden = false; controls.enabled = true;
+  if (sv.map !== map.id) { pickFloor(-1); return; } // the map changed under the walk
+  controls.target.copy(sv.T); camera.position.copy(sv.P);
+  pickFloor(sv.floor);
+}
+function walkFrame(now) {
+  const dt = Math.min(0.1, (now - WALK.last) / 1000); WALK.last = now;
+  const speed = 5 * +$("walk-speed").value; // Tarkov sprint is about 5 m/s
+  if (WALK.playing) { WALK.d += dt * speed; if (WALK.d >= RUNPATH.total) { WALK.d = RUNPATH.total; WALK.playing = false; $("walk-play").textContent = "Replay"; } }
+  if (document.activeElement !== $("walk-pos")) $("walk-pos").value = Math.round(WALK.d / RUNPATH.total * 1000);
+  const p = pathAt(WALK.d), ahead = pathAt(WALK.d + 4).add(pathAt(WALK.d + 8)).add(pathAt(WALK.d + 12)).multiplyScalar(1 / 3);
+  const dir = ahead.clone().sub(p); dir.y = 0; if (dir.lengthSq() < 1e-4) dir.set(0, 0, 1); dir.normalize();
+  let cam, look;
+  if (WALK.fp) { cam = p.clone().add(new THREE.Vector3(0, 1.35, 0)); look = ahead.clone().add(new THREE.Vector3(0, 1.2, 0)); }
+  else { cam = p.clone().addScaledVector(dir, -8).add(new THREE.Vector3(0, 6.5, 0)); look = p.clone().addScaledVector(dir, 5).add(new THREE.Vector3(0, 0.5, 0)); }
+  const k = 1 - Math.exp(-dt * (WALK.fp ? 8 : 5)); // smooth out the zigzag of the walk graph
+  WALK.cam = WALK.cam ? WALK.cam.lerp(cam, k) : cam; WALK.look = WALK.look ? WALK.look.lerp(look, k) : look;
+  camera.position.copy(WALK.cam); controls.target.copy(WALK.look); camera.lookAt(WALK.look);
+  // cut away what's above your head and loot on other floors
+  const y = p.y;
+  devClip.value = y + 2.6; uniforms.uYMin.value = y - 2.5; uniforms.uYMax.value = y + 2.5;
+  // what's next
+  const nextG = RUNPATH.groups.find((x) => x.at > WALK.d + 1);
+  $("walk-next").innerHTML = nextG
+    ? `Next: <b>${nextG.g.n} · ${esc((nextG.g.loc.near ? "near " : "") + nextG.g.loc.name)}${nextG.g.loc.floor ? ", " + esc(nextG.g.loc.floor) : ""}</b>, ${Math.round(nextG.at - WALK.d)} m`
+    : WALK.d >= RUNPATH.total - 1 ? `<b>Extract reached.</b> ${Math.round(RUNPATH.total)} m walked.` : `Next: <b>the extract</b>, ${Math.round(RUNPATH.total - WALK.d)} m`;
+}
+$("walk-play").addEventListener("click", () => {
+  if (!WALK) return;
+  if (WALK.d >= RUNPATH.total) WALK.d = 0;
+  WALK.playing = !WALK.playing; $("walk-play").textContent = WALK.playing ? "Pause" : "Play";
+});
+$("walk-pos").addEventListener("input", () => { if (WALK) WALK.d = +$("walk-pos").value / 1000 * RUNPATH.total; });
+$("walk-view").addEventListener("click", () => { if (!WALK) return; WALK.fp = !WALK.fp; $("walk-view").setAttribute("aria-pressed", String(WALK.fp)); $("walk-view").textContent = WALK.fp ? "Follow view" : "First person"; });
+$("walk-exit").addEventListener("click", stopWalk);
+document.addEventListener("keydown", (e) => { if (WALK && e.key === "Escape") stopWalk(); if (WALK && e.key === " " && e.target === document.body) { e.preventDefault(); $("walk-play").click(); } });
 
 // ---------- 2D map overlay (tarkov.dev SVG maps, CC BY-NC-SA 4.0) ----------
 // bounds and orientation as in tools/build_blockouts.py; mode 0 "s,t", 1 "t,1-s", 2 "1-t,s".
@@ -2145,7 +2278,16 @@ $("price").addEventListener("change", () => { sel.tpl = null; refresh(); });
 // ---------- loop ----------
 const v3 = new THREE.Vector3();
 function tick() {
-  controls.update();
+  const now = performance.now();
+  if (WALK && RUNPATH) walkFrame(now);
+  else {
+    if (camAnim) {
+      const t = Math.min(1, (now - camAnim.t0) / camAnim.dur), e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      controls.target.lerpVectors(camAnim.fT, camAnim.tT, e); camera.position.lerpVectors(camAnim.fP, camAnim.tP, e);
+      if (t >= 1) camAnim = null;
+    }
+    controls.update();
+  }
   const dist = camera.position.distanceTo(controls.target);
   const near = Math.max(0.2, dist / 300), far = dist * 6 + 3000;
   if (Math.abs(camera.near - near) > near * 0.1 || Math.abs(camera.far - far) > far * 0.1) { camera.near = near; camera.far = far; camera.updateProjectionMatrix(); }
