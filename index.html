@@ -8,302 +8,342 @@
 <meta name="description" content="Where loot spawns on every map of our SPT server, with the odds per raid.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wdth,wght@75..100,400..700&display=swap">
 <style>
-/* Layout: full-height tool. Field kit sidebar on the left, 3D map fills the rest; stacks map-over-panel on phones.
-   Deliberately single dark look: a night-vision map table, loot glows like the raid-guide reference. */
+/* A planning table for the group's hardcore SPT server. Tarkov's own field-gear UI: gunmetal panels with an olive cast,
+   bone text, khaki for whatever is selected (like the game's selected tabs). Map colours are functional only:
+   loot amber, route magenta, doors red/green, extract colours. One family (Saira): condensed for headings and map
+   names, normal width for reading. The map is the hero: one panel on the left with three tabs, everything else
+   floats on the map. */
 :root {
   color-scheme: dark;
-  --bg: #0b0f12;          /* map table, blue-black */
-  --panel: #12181c;       /* kit sidebar */
-  --raise: #192127;       /* inputs, rows */
-  --line: #26313a;        /* hairlines */
-  --fg: #dfe2dc;          /* bone text */
-  --muted: #8b969d;       /* secondary text */
-  --faint: #5b6770;       /* tertiary */
-  --glow: #ff8a2a;        /* loot glow, the one accent */
+  --bg: #121513;          /* map void, gunmetal */
+  --panel: #191d1a;       /* panel */
+  --raise: #222723;       /* inputs, rows */
+  --line: #313831;        /* rules */
+  --fg: #e4dfd0;          /* bone */
+  --muted: #a39e8e;
+  --faint: #716d62;
+  --khaki: #c9b884;       /* selected */
+  --khaki-ink: #1d1b14;
+  --glow: #ff8a2a;        /* loot glow */
   --cont: #8fd6ea;        /* container diamonds */
   --route: #ff5fd2;       /* loot run */
-  --glow-hot: #ffd27a;    /* glow core */
-  --glow-ink: #1a0d02;    /* text on glow */
-  --cold: #6fb7c9;        /* containers, secondary data */
+  --glow-hot: #ffd27a;
+  --glow-ink: #1a0d02;
+  --cold: #6fb7c9;
   --todo: #c9a64a;
-  --exit-pmc: #74c69d;    /* PMC extract */
-  --exit-scav: #b79cff;   /* Scav extract */
-  --exit-any: #e8ecef;    /* both sides */
-  --transit: #7fd1e0;     /* transit to another map */
-  --door-need: #e5484d;   /* locked, no key */
-  --door-ok: #46c27a;     /* locked, you have the key */
-  --door-breach: #e8a33d; /* can be breached */
-  --font-display: "Chakra Petch", "Bahnschrift", "DIN Alternate", "Arial Narrow", sans-serif;
-  --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --exit-pmc: #74c69d;
+  --exit-scav: #b79cff;
+  --exit-any: #e8ecef;
+  --transit: #7fd1e0;
+  --door-need: #e5484d;
+  --door-ok: #46c27a;
+  --door-breach: #e8a33d;
+  --font: "Saira", "Bahnschrift", "Segoe UI", system-ui, sans-serif;
+  --font-display: var(--font);
+  --font-body: var(--font);
+  --narrow: 78%;
 }
-html, body { height: 100%; }
-body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; overflow: hidden; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 14px; line-height: 1.45; overflow: hidden; }
 * { box-sizing: border-box; }
 button, input, select { font: inherit; color: inherit; }
-:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--khaki); outline-offset: 2px; }
+[hidden] { display: none !important; }
 
-.app { display: grid; grid-template-columns: 340px minmax(0, 1fr) 264px; height: 100%; }
-.kit {
-  background: var(--panel); border-right: 1px solid var(--line);
-  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+/* ---- frame: top bar, panel, map ---- */
+.app { display: grid; grid-template-columns: 372px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+.top {
+  grid-column: 1 / -1; display: flex; align-items: stretch; gap: 20px; min-width: 0;
+  background: var(--panel); border-bottom: 1px solid var(--line); padding: 0 16px; padding-left: max(16px, env(safe-area-inset-left, 0px));
 }
-.kit-scroll { overflow-y: auto; padding-block: 16px 24px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 16px; display: flex; flex-direction: column; gap: 20px; min-height: 0; }
-.kit.ctrl { border-right: none; border-left: 1px solid var(--line); }
-.kit.ctrl .kit-scroll { padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-.ctrl .maps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.brand { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.brand h1 { font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: .06em; text-transform: uppercase; margin: 0; }
-.brand small { color: var(--faint); font-size: 12px; letter-spacing: .04em; }
-.label { font-family: var(--font-display); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
-
-.maps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.brand { display: flex; flex-direction: column; justify-content: center; padding: 8px 0; flex: none; }
+.brand h1 { margin: 0; font-weight: 700; font-stretch: var(--narrow); font-size: 21px; line-height: 1; letter-spacing: .01em; }
+.brand small { color: var(--faint); font-size: 12px; }
+.maps { display: flex; align-items: stretch; gap: 2px; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.maps::-webkit-scrollbar { display: none; }
 .map-btn {
-  background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 7px 6px;
-  font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
-  cursor: pointer; text-align: left; line-height: 1.2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: none; border: 0; border-bottom: 2px solid transparent; padding: 0 10px; cursor: pointer; white-space: nowrap;
+  font-weight: 600; font-stretch: var(--narrow); font-size: 15px; color: var(--muted);
 }
-.map-btn:hover { border-color: var(--faint); }
-.map-btn[aria-pressed="true"] { border-color: var(--glow); color: var(--glow); }
-.map-btn[disabled] { cursor: not-allowed; color: var(--faint); border-style: dashed; }
-.map-btn .tag { display: block; font-family: var(--font-body); font-weight: 500; font-size: 10px; letter-spacing: .08em; color: var(--todo); }
-.variants { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-.variants[hidden] { display: none !important; }
+.map-btn:hover { color: var(--fg); }
+.map-btn[aria-pressed="true"] { color: var(--fg); border-bottom-color: var(--khaki); }
+.map-btn[disabled] { cursor: not-allowed; color: var(--faint); }
+.map-btn .tag { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--todo); font-stretch: 100%; }
+.variants { display: flex; align-items: center; gap: 0; flex: none; }
+.variants .chip { border-radius: 0; margin-left: -1px; }
+.variants .chip:first-child { border-radius: 3px 0 0 3px; margin-left: 0; }
+.variants .chip:last-child { border-radius: 0 3px 3px 0; }
 .chip {
-  background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 3px; padding: 3px 10px; font-size: 12.5px; cursor: pointer; color: var(--muted);
 }
-.chip[aria-pressed="true"] { border-color: var(--glow); color: var(--fg); background: color-mix(in srgb, var(--glow) 14%, transparent); }
+.chip[aria-pressed="true"] { border-color: var(--khaki); background: var(--khaki); color: var(--khaki-ink); position: relative; }
 
+.panel { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--line); flex: none; }
+.tab {
+  background: none; border: 0; border-bottom: 2px solid transparent; padding: 12px 6px 10px; cursor: pointer; color: var(--muted);
+  font-weight: 600; font-stretch: var(--narrow); font-size: 15px; display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1.15;
+}
+.tab:hover { color: var(--fg); }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--khaki); background: color-mix(in srgb, var(--khaki) 6%, transparent); }
+.tab .badge-n { font-size: 11.5px; font-weight: 500; font-stretch: 100%; color: var(--faint); min-height: 1.15em; font-variant-numeric: tabular-nums; }
+.tab .badge-n b { color: var(--route); font-weight: 600; }
+.tab[aria-selected="true"] .badge-n { color: var(--muted); }
+.panel-scroll { overflow-y: auto; min-height: 0; flex: 1; padding: 16px 16px 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); }
+.tabpanel { display: flex; flex-direction: column; gap: 22px; }
+.label { font-weight: 600; font-stretch: var(--narrow); font-size: 15px; color: var(--fg); margin: 0 0 8px; }
+.label + .note { margin-top: -4px; }
+.empty-note { display: none; color: var(--muted); font-size: 13px; line-height: 1.55; }
+#run-sec[hidden] + .empty-note, #keys-sec[hidden] + .empty-note { display: block; }
+
+/* ---- find loot ---- */
 .field { display: flex; flex-direction: column; gap: 8px; }
 .search { position: relative; }
-.search input {
-  width: 100%; background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 9px 10px 9px 32px;
-}
+.search input { width: 100%; background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 10px 10px 10px 34px; font-size: 15px; }
 .search input::placeholder { color: var(--faint); }
-.search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; stroke: var(--faint); fill: none; stroke-width: 2; }
+.search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; stroke: var(--muted); fill: none; stroke-width: 2; }
 .row2 { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 8px; }
 select { width: 100%; background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 8px; min-width: 0; }
-
-.selection {
-  border: 1px solid color-mix(in srgb, var(--glow) 45%, var(--line)); border-radius: 4px; padding: 12px;
-  background: color-mix(in srgb, var(--glow) 6%, var(--panel)); display: flex; flex-direction: column; gap: 10px;
-}
+input[type=range] { accent-color: var(--khaki); }
+.selection { border-left: 3px solid var(--glow); padding: 2px 0 2px 12px; display: flex; flex-direction: column; gap: 12px; }
 .sel-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
-.sel-name { font-family: var(--font-display); font-weight: 600; font-size: 16px; line-height: 1.2; text-wrap: balance; }
-.sel-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
-.clear { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 0; white-space: nowrap; }
-.clear:hover { color: var(--fg); }
+.sel-name { font-weight: 700; font-stretch: var(--narrow); font-size: 20px; line-height: 1.15; text-wrap: balance; }
+.sel-sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.clear { background: none; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); cursor: pointer; font-size: 12px; padding: 3px 8px; white-space: nowrap; }
+.clear:hover { color: var(--fg); border-color: var(--faint); }
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.stat b { display: block; font-family: var(--font-display); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--glow); line-height: 1.1; }
-.stat span { font-size: 11px; color: var(--muted); }
-
+.stat b { display: block; font-weight: 700; font-stretch: var(--narrow); font-size: 24px; font-variant-numeric: tabular-nums; color: var(--glow); line-height: 1.05; }
+.stat span { font-size: 12px; color: var(--muted); line-height: 1.3; display: block; margin-top: 2px; }
 .list { display: flex; flex-direction: column; }
-.item {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline;
-  padding: 7px 8px; border: none; background: none; border-bottom: 1px solid var(--line); text-align: left; cursor: pointer; width: 100%;
-}
+.item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline; padding: 8px 6px; border: none; background: none; border-bottom: 1px solid var(--line); text-align: left; cursor: pointer; width: 100%; }
 .item:hover { background: var(--raise); }
 .item[aria-current="true"] { background: color-mix(in srgb, var(--glow) 12%, transparent); }
 .item .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.item .e { font-variant-numeric: tabular-nums; color: var(--glow); font-weight: 600; font-size: 13px; }
-.item .m { grid-column: 1 / -1; font-size: 11px; color: var(--faint); }
-.bar { height: 2px; grid-column: 1 / -1; background: var(--line); border-radius: 1px; overflow: hidden; }
+.item .e { font-variant-numeric: tabular-nums; color: var(--glow); font-weight: 600; }
+.item .m { grid-column: 1 / -1; font-size: 12px; color: var(--faint); }
+.bar { height: 2px; grid-column: 1 / -1; background: var(--line); overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--glow); }
 .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
-
 .cont { display: flex; flex-direction: column; gap: 6px; }
 .cont-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; font-size: 13px; align-items: baseline; }
 .cont-row .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cont-row .c { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 12px; }
 .cont-row .p { color: var(--cold); font-variant-numeric: tabular-nums; font-weight: 600; min-width: 44px; text-align: right; }
-.note { font-size: 12px; color: var(--faint); line-height: 1.5; }
+.note { font-size: 12.5px; color: var(--faint); line-height: 1.55; margin: 0; }
 .note b { color: var(--muted); font-weight: 600; }
 
-.slice { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; font-size: 12px; color: var(--muted); }
-.slice input { width: 100%; accent-color: var(--glow); }
-.slice output { font-variant-numeric: tabular-nums; color: var(--fg); min-width: 52px; text-align: right; }
+/* ---- loot run ---- */
+.run-form { display: flex; flex-direction: column; gap: 10px; }
+.run-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.run-row select { grid-column: 2 / 4; }
+.run-row output { font-variant-numeric: tabular-nums; color: var(--fg); min-width: 56px; text-align: right; font-weight: 600; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.seg button { background: var(--raise); border: 0; border-right: 1px solid var(--line); color: var(--muted); font-weight: 600; font-stretch: var(--narrow); font-size: 14px; padding: 8px 4px; cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--khaki); color: var(--khaki-ink); }
+.run-total { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 2px 0 12px; }
+.run-total b { display: block; font-size: 22px; line-height: 1.05; color: var(--route); font-weight: 700; font-stretch: var(--narrow); font-variant-numeric: tabular-nums; }
+.run-total span { font-size: 12px; color: var(--muted); display: block; margin-top: 2px; line-height: 1.3; }
+.run-steps { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; font-size: 13px; }
+.run-steps li { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.run-steps li > i { font-style: normal; font-weight: 700; color: var(--route); display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--route); font-size: 12px; align-self: start; }
+.run-steps li.loc > i { background: var(--route); color: #160612; }
+.run-steps li.door > i { border-color: var(--door-need); color: var(--door-need); border-radius: 3px; }
+.run-steps li.door.ok > i { border-color: var(--door-ok); color: var(--door-ok); }
+.run-steps li b { font-weight: 600; font-size: 14px; }
+.run-steps li .what { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.run-steps li small { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.run-keys { margin-top: 12px; font-size: 13px; }
+.run-keys b { color: var(--door-need); font-weight: 600; }
+.toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+.toggles .chip { display: inline-flex; align-items: center; gap: 7px; }
+.toggles .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); display: inline-block; }
 
+/* ---- keys ---- */
+.keys { display: flex; flex-direction: column; gap: 4px; }
+.keys-sum { font-size: 13px; color: var(--muted); }
+.keys-sum span { display: block; }
+.keys-sum b { color: var(--khaki); font-weight: 600; }
+.key { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left; cursor: pointer; background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; font-size: 13.5px; }
+.key:hover { border-color: var(--faint); }
+.key i { width: 14px; height: 14px; border-radius: 2px; border: 1px solid var(--faint); display: grid; place-items: center; font-style: normal; font-size: 11px; }
+.key[aria-pressed="true"] { border-color: var(--door-ok); }
+.key[aria-pressed="true"] i { background: var(--door-ok); border-color: var(--door-ok); color: var(--bg); }
+.key .n { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.key .n > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.key .n small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: normal; }
+.key .d { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 12px; }
+.key .best { font-weight: 600; color: var(--khaki); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-top: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; background: var(--c); }
+
+/* ---- map ---- */
 .stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-.hud { position: absolute; top: 12px; left: 12px; right: max(12px, env(safe-area-inset-right, 0px)); display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
-.badge {
-  pointer-events: auto; background: color-mix(in srgb, var(--bg) 82%, transparent); border: 1px solid var(--line); border-radius: 3px;
-  padding: 5px 9px; font-size: 12px; color: var(--muted); backdrop-filter: blur(6px);
-}
-.badge strong { color: var(--fg); font-family: var(--font-display); letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
+.hud { position: absolute; top: 12px; left: 12px; right: 140px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.badge { pointer-events: auto; background: color-mix(in srgb, var(--bg) 84%, transparent); border: 1px solid var(--line); border-radius: 3px; padding: 5px 10px; font-size: 12.5px; color: var(--muted); backdrop-filter: blur(6px); }
+.badge strong { color: var(--fg); font-weight: 700; font-stretch: var(--narrow); font-size: 14px; }
 .badge.warn { color: var(--todo); border-color: color-mix(in srgb, var(--todo) 40%, var(--line)); }
-.help { position: absolute; bottom: 12px; right: max(12px, env(safe-area-inset-right, 0px)); font-size: 11px; color: var(--faint); pointer-events: none; text-align: right; }
+.float { position: absolute; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); border-radius: 4px; backdrop-filter: blur(8px); }
+.layers-btn { position: absolute; top: 12px; right: max(12px, env(safe-area-inset-right, 0px)); display: inline-flex; align-items: center; gap: 8px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); border-radius: 3px; padding: 6px 12px; cursor: pointer; font-weight: 600; font-stretch: var(--narrow); font-size: 14px; }
+.layers-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.layers-btn[aria-expanded="true"] { border-color: var(--khaki); }
+.layers { top: 50px; right: max(12px, env(safe-area-inset-right, 0px)); width: 248px; padding: 12px; display: flex; flex-direction: column; gap: 14px; max-height: calc(100% - 64px); overflow-y: auto; }
+.layers .label { font-size: 14px; margin-bottom: 6px; }
+.layers .toggles { flex-direction: column; gap: 0; }
+.layers .toggles .chip { border: 0; border-radius: 3px; background: none; color: var(--muted); padding: 5px 6px; justify-content: flex-start; font-size: 13.5px; }
+.layers .toggles .chip:hover { background: var(--raise); color: var(--fg); }
+.layers .toggles .chip::before { content: ""; width: 14px; height: 14px; border: 1px solid var(--faint); border-radius: 2px; flex: none; }
+.layers .toggles .chip[aria-pressed="true"] { color: var(--fg); background: none; }
+.layers .toggles .chip[aria-pressed="true"]::before { background: var(--khaki); border-color: var(--khaki); box-shadow: inset 0 0 0 3px var(--panel); }
+.layers .toggles .chip i { margin-left: auto; order: 2; }
+.slice { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.slice input { width: 100%; }
+.slice output { font-variant-numeric: tabular-nums; color: var(--fg); min-width: 52px; text-align: right; }
+.floors-float { left: max(12px, env(safe-area-inset-left, 0px)); bottom: 40px; padding: 4px; }
+.floors { display: flex; flex-direction: column-reverse; gap: 2px; }
+.floors button {
+  display: flex; flex-direction: column; align-items: flex-start; text-align: left; min-width: 112px;
+  background: none; border: 0; border-left: 3px solid transparent; border-radius: 2px; padding: 5px 10px 5px 8px; cursor: pointer;
+  font-weight: 600; font-stretch: var(--narrow); font-size: 14px; color: var(--muted); line-height: 1.15;
+}
+.floors button small { font-weight: 400; font-stretch: 100%; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.floors button:hover { color: var(--fg); background: var(--raise); }
+.floors button[aria-pressed="true"] { color: var(--fg); border-left-color: var(--khaki); background: color-mix(in srgb, var(--khaki) 10%, transparent); }
+.help { position: absolute; bottom: 12px; right: max(12px, env(safe-area-inset-right, 0px)); font-size: 12px; color: var(--faint); pointer-events: none; text-align: right; }
 .labels { position: absolute; inset: 0; pointer-events: none; }
-.rpin { position: absolute; transform: translate(-50%, -50%); display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
-  background: var(--route); color: #160612; font: 700 11px/1 var(--font-body); box-shadow: 0 0 0 2px rgba(0,0,0,.55); white-space: nowrap; }
+.marks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-weight: 600; font-stretch: var(--narrow); font-size: 16px; pointer-events: none; }
+.rpin { position: absolute; transform: translate(-50%, -50%); display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
+  background: var(--route); color: #160612; font-weight: 700; font-size: 12px; line-height: 1; box-shadow: 0 0 0 2px rgba(0,0,0,.55); white-space: nowrap; }
 .rpin.key { background: var(--bg); color: var(--door-need); border: 1px solid var(--door-need); font-weight: 600; }
 .rpin.key.ok { color: var(--door-ok); border-color: var(--door-ok); }
 .rpin.end { background: var(--exit-pmc); color: #04140c; }
-.run-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-.run-row { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
-.run-row select { grid-column: 2 / 4; }
-.run-row output { font-variant-numeric: tabular-nums; color: var(--fg); min-width: 18px; text-align: right; }
-.run-total { display: flex; gap: 14px; margin: 4px 0 10px; }
-.run-total b { font-size: 18px; color: var(--route); font-family: var(--font-display); }
-.run-total span { font-size: 11px; color: var(--muted); display: block; }
-.run-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
-.run-steps li { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--line); }
-.run-steps li i { font-style: normal; font-weight: 700; color: var(--route); text-align: center; }
-.run-steps li.door i { color: var(--door-need); } .run-steps li.door.ok i { color: var(--door-ok); }
-.run-steps li small { color: var(--muted); font-variant-numeric: tabular-nums; }
-.run-keys { margin-top: 10px; font-size: 12px; }
-.run-keys b { color: var(--door-need); }
+.rpin.dot { min-width: 8px; width: 8px; height: 8px; padding: 0; box-shadow: 0 0 0 2px rgba(0,0,0,.5); }
 .pin {
   position: absolute; transform: translate(-50%, calc(-100% - 10px)); display: flex; align-items: center; gap: 6px;
-  background: rgba(14, 16, 18, .88); border: 1px solid color-mix(in srgb, var(--glow) 70%, transparent); border-radius: 999px;
-  padding: 3px 10px 3px 3px; white-space: nowrap; font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: .05em; color: var(--fg);
+  background: rgba(18, 21, 19, .9); border: 1px solid color-mix(in srgb, var(--glow) 70%, transparent); border-radius: 999px;
+  padding: 3px 10px 3px 3px; white-space: nowrap; font-weight: 600; font-size: 12.5px; color: var(--fg);
 }
 .pin i { font-style: normal; width: 20px; height: 20px; border-radius: 50%; background: var(--glow); color: var(--glow-ink); display: grid; place-items: center; font-size: 11px; }
 .pin::after { content: ""; position: absolute; left: 50%; bottom: -11px; width: 1px; height: 10px; background: var(--glow); }
-.tip {
-  position: absolute; pointer-events: none; background: rgba(12, 15, 17, .95); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px;
-  font-size: 12px; max-width: 280px; min-width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
-}
-.tip h4 { margin: 0 0 6px; font-family: var(--font-display); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.tip { position: absolute; pointer-events: none; background: rgba(20, 23, 21, .96); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; font-size: 12.5px; max-width: 320px; min-width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+.tip h4 { margin: 0 0 6px; font-weight: 700; font-stretch: var(--narrow); font-size: 15px; color: var(--fg); }
 .tip .line { color: var(--fg); margin: 0 0 8px; }
 .tip .line b { color: var(--glow); font-variant-numeric: tabular-nums; }
 .tip .r { display: grid; grid-template-columns: minmax(0, 1fr) 56px 64px; gap: 8px; padding: 2px 0; color: var(--muted); }
 .tip .r span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tip .r span:not(:first-child) { font-variant-numeric: tabular-nums; text-align: right; }
-.tip .r.th { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 2px; }
+.tip .r.th { font-size: 11px; color: var(--faint); border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 2px; }
 .tip .r.hit { color: var(--glow); }
 .tip .r.hit span:first-child { color: var(--fg); }
-.tip { max-width: 320px; }
-.marks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.place {
-  position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font-family: var(--font-display); font-weight: 600;
-  text-transform: uppercase; letter-spacing: .12em; color: var(--fg); opacity: .9; font-size: 11px;
-  text-shadow: 0 0 3px var(--bg), 0 0 6px var(--bg), 0 1px 2px var(--bg);
-}
-.place.big { font-size: 13px; letter-spacing: .14em; }
-.exit {
-  position: absolute; transform: translate(-50%, calc(-100% - 4px)); display: flex; align-items: center; gap: 5px; white-space: nowrap;
-  background: rgba(10, 13, 15, .86); border: 1px solid var(--line); border-left: 3px solid var(--c); border-radius: 2px;
-  padding: 2px 7px 2px 5px; font-size: 11px; color: var(--fg);
-}
-.exit b { font-family: var(--font-display); font-weight: 600; font-size: 9px; letter-spacing: .12em; color: var(--c); }
-.toggles { display: flex; flex-wrap: wrap; gap: 6px; }
-.toggles .chip { display: inline-flex; align-items: center; gap: 6px; }
-.toggles .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); display: inline-block; }
-.floors { display: flex; flex-direction: column; gap: 4px; }
-.floors button {
-  display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-align: left;
-  background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 7px 10px; cursor: pointer;
-  font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg);
-}
-.floors button small { font-family: var(--font-body); font-weight: 500; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--faint); font-variant-numeric: tabular-nums; }
-.floors button:hover { border-color: var(--faint); }
-.floors button[aria-pressed="true"] { border-color: var(--glow); color: var(--glow); }
-.keys { display: flex; flex-direction: column; gap: 4px; }
-.drop > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
-  background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 9px 10px; }
-.drop > summary::-webkit-details-marker { display: none; }
-.drop > summary::after { content: ""; width: 7px; height: 7px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg) translateY(-2px); transition: transform .15s; }
-.drop[open] > summary::after { transform: rotate(225deg) translateY(-1px); }
-.drop > summary:hover { border-color: var(--faint); }
-.drop > summary .label { margin: 0; }
-.drop > summary .sum { min-width: 0; font-size: 11px; color: var(--muted); text-align: right; display: flex; flex-direction: column; gap: 1px; }
-.drop > summary .sum span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.drop > summary .sum b { color: var(--glow); font-weight: 600; }
-.drop[open] > summary { margin-bottom: 8px; }
-.key {
-  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: center; text-align: left; cursor: pointer;
-  background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 7px 9px; font-size: 12px;
-}
-.key i { width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--faint); display: grid; place-items: center; font-style: normal; font-size: 10px; }
-.key[aria-pressed="true"] { border-color: var(--door-ok); }
-.key[aria-pressed="true"] i { background: var(--door-ok); border-color: var(--door-ok); color: var(--bg); }
-.key .n { min-width: 0; }
-.key .d { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 11px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
-.key .n { display: flex; flex-direction: column; gap: 2px; }
-.key .n > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.key .n small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: normal; }
-.key .best { font-weight: 600; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--glow); }
-#reach-row { margin-bottom: 8px; }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); margin-top: 8px; }
-.legend span { display: inline-flex; align-items: center; gap: 5px; }
-.legend i { width: 10px; height: 10px; border-radius: 2px; background: var(--c); }
-.loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-family: var(--font-display); letter-spacing: .12em; text-transform: uppercase; font-size: 13px; pointer-events: none; }
+/* place names keep the map convention: wide-tracked caps */
+.place { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font-weight: 600; font-stretch: var(--narrow); text-transform: uppercase; letter-spacing: .1em; color: var(--fg); opacity: .92; font-size: 12px;
+  text-shadow: 0 0 3px var(--bg), 0 0 6px var(--bg), 0 1px 2px var(--bg); }
+.place.big { font-size: 14px; }
+.exit { position: absolute; transform: translate(-50%, calc(-100% - 4px)); display: flex; align-items: center; gap: 5px; white-space: nowrap;
+  background: rgba(18, 21, 19, .88); border: 1px solid var(--line); border-left: 3px solid var(--c); border-radius: 2px; padding: 2px 7px 2px 5px; font-size: 12px; color: var(--fg); }
+.exit b { font-weight: 700; font-size: 10px; color: var(--c); }
 
-@media (max-width: 1100px) {
-  .app { grid-template-columns: 300px minmax(0, 1fr) 232px; }
-}
+@media (max-width: 1100px) { .app { grid-template-columns: 330px minmax(0, 1fr); } }
 @media (max-width: 760px) {
   body { overflow: auto; }
-  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 56vh auto auto; height: auto; min-height: 100%; }
-  .stage { order: -2; height: 56vh; }
-  .kit.ctrl { order: -1; }
-  .kit, .kit.ctrl { border-right: none; border-left: none; border-top: 1px solid var(--line); overflow: visible; }
-  .kit.ctrl .kit-scroll { padding-left: max(16px, env(safe-area-inset-left, 0px)); }
-  .ctrl .maps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .kit-scroll { overflow: visible; padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 58vh auto; height: auto; min-height: 100%; }
+  .top { flex-wrap: wrap; gap: 6px 14px; padding-bottom: 6px; }
+  .maps { width: 100%; order: 3; }
+  .map-btn { padding: 8px 8px; }
+  .stage { grid-row: 2; height: 58vh; }
+  .panel { grid-row: 3; border-right: none; border-top: 1px solid var(--line); }
+  .panel-scroll { overflow: visible; padding-right: max(16px, env(safe-area-inset-right, 0px)); }
   .help { display: none; }
+  .hud { right: 110px; }
+  .floors-float { bottom: 10px; right: 10px; }
+  .floors { flex-direction: row-reverse; flex-wrap: wrap; justify-content: flex-end; }
+  .floors button { min-width: 0; padding: 5px 8px; border-left: 0; border-bottom: 2px solid transparent; }
+  .floors button small { display: none; }
+  .floors button[aria-pressed="true"] { border-bottom-color: var(--khaki); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
-[hidden] { display: none !important; }
-body { margin: 0; }
 :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 </style>
 </head>
 <body>
 <div class="app">
-  <aside class="kit loot" aria-label="Loot">
-    <div class="kit-scroll">
-      <div class="brand">
-        <h1>Raid Loot Atlas</h1>
-        <small>SurvivalPack server</small>
+  <header class="top">
+    <div class="brand">
+      <h1>Raid Loot Atlas</h1>
+      <small>SurvivalPack server</small>
+    </div>
+    <nav class="maps" id="maps" aria-label="Map"></nav>
+    <div class="variants" id="variants" hidden></div>
+  </header>
+
+  <aside class="panel" aria-label="Loot, loot run and keys">
+    <div class="tabs" role="tablist" id="tabs">
+      <button class="tab" role="tab" data-tab="loot" aria-selected="true" aria-controls="tab-loot">Find loot<span class="badge-n" id="loot-badge"></span></button>
+      <button class="tab" role="tab" data-tab="run" aria-selected="false" aria-controls="tab-run">Loot run<span class="badge-n" id="run-sum"></span></button>
+      <button class="tab" role="tab" data-tab="keys" aria-selected="false" aria-controls="tab-keys">Keys<span class="badge-n" id="keys-badge"></span></button>
+    </div>
+    <div class="panel-scroll">
+      <div class="tabpanel" id="tab-loot" role="tabpanel">
+        <section class="field">
+          <div class="search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+            <input id="q" type="search" placeholder="Search an item: LEDX, GPU, Salewa" autocomplete="off" aria-label="Search items on this map">
+          </div>
+          <div class="row2">
+            <select id="cat" aria-label="Loot type"></select>
+            <select id="price" aria-label="Minimum value">
+              <option value="0">Any value</option>
+              <option value="25000">₽25k and up</option>
+              <option value="50000">₽50k and up</option>
+              <option value="100000" selected>₽100k and up</option>
+              <option value="250000">₽250k and up</option>
+            </select>
+          </div>
+        </section>
+        <section class="selection" id="selection" aria-live="polite"></section>
+        <section>
+          <p class="label" id="list-label">Items</p>
+          <div class="list" id="list"></div>
+        </section>
+        <section>
+          <p class="label">Containers on this map</p>
+          <div class="cont" id="containers"></div>
+        </section>
+        <p class="note" id="about"></p>
       </div>
 
-      <section class="field">
-        <p class="label">Find loot</p>
-        <div class="search">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-          <input id="q" type="search" placeholder="Item name, e.g. LEDX, GPU, Salewa" autocomplete="off" aria-label="Search items on this map">
-        </div>
-        <div class="row2">
-          <select id="cat" aria-label="Loot type"></select>
-          <select id="price" aria-label="Minimum value">
-            <option value="0">Any value</option>
-            <option value="25000">≥ ₽25k</option>
-            <option value="50000">≥ ₽50k</option>
-            <option value="100000" selected>≥ ₽100k</option>
-            <option value="250000">≥ ₽250k</option>
-          </select>
-        </div>
-      </section>
-
-      <section class="selection" id="selection" aria-live="polite"></section>
-
-      <section id="run-sec" hidden>
-        <details class="drop" id="run-drop">
-          <summary><span class="label">Loot run</span><span class="sum" id="run-sum"></span></summary>
+      <div class="tabpanel" id="tab-run" role="tabpanel" hidden>
+        <section id="run-sec" hidden>
           <div class="run-form">
             <label class="run-row"><span>Spawn</span><select id="run-spawn" aria-label="Spawn"></select></label>
-            <p class="note">Or click a spawn dot on the map.</p>
-            <label class="run-row"><span>Stops</span><input type="range" id="run-n" min="2" max="12" step="1" value="6"><output id="run-n-o">6</output></label>
-            <div class="toggles"><button class="chip" id="run-anykey" aria-pressed="false" style="--c: var(--door-need)"><i></i>Use keys I don't have</button></div>
+            <p class="note">Or click a green or purple spawn dot on the map.</p>
+            <div class="seg" id="run-goal" role="group" aria-label="What the run is for">
+              <button data-g="value">Value</button><button data-g="bag">Bag space</button><button data-g="count">Item count</button>
+            </div>
+            <label class="run-row"><span id="run-t-l">Target</span><input type="range" id="run-t" min="0" max="100" step="1" value="50"><output id="run-t-o"></output></label>
+            <p class="note" id="run-goal-note"></p>
+            <div class="toggles"><button class="chip" id="run-anykey" aria-pressed="false">Plan through doors I don't have keys for</button></div>
           </div>
-          <div id="run-out" aria-live="polite"></div>
-        </details>
-      </section>
+          <div id="run-out" aria-live="polite" style="margin-top:18px"></div>
+        </section>
+        <p class="empty-note">Loot runs need this map's walk data from the MapDump plugin. Pick another map, or dump this one while hosting a raid.</p>
+      </div>
 
-      <section>
-        <p class="label" id="list-label">Items</p>
-        <div class="list" id="list"></div>
-      </section>
-
-      <section>
-        <p class="label">Containers on this map</p>
-        <div class="cont" id="containers"></div>
-      </section>
-
-      <p class="note" id="about"></p>
+      <div class="tabpanel" id="tab-keys" role="tabpanel" hidden>
+        <section id="keys-sec" hidden>
+          <div class="keys-sum" id="keys-sum"></div>
+          <div class="toggles" id="reach-row" hidden style="margin:12px 0"><button class="chip" id="reach-only" aria-pressed="true">Only show loot I can reach</button></div>
+          <div class="keys" id="keys"></div>
+          <p class="note" id="keys-note" style="margin-top:12px"></p>
+        </section>
+        <p class="empty-note">This map has no door data yet. It comes from the MapDump plugin.</p>
+      </div>
     </div>
   </aside>
 
@@ -313,47 +353,22 @@ body { margin: 0; }
     <div class="labels" id="labels"></div>
     <div class="labels" id="runmarks"></div>
     <div class="hud" id="hud"></div>
-    <div class="tip" id="tip" hidden></div>
-    <div class="loading" id="loading">Loading spawn data</div>
-    <div class="help">Drag to move · right-drag to orbit · scroll to zoom · hover a dot for its loot</div>
-  </main>
-  <aside class="kit ctrl" aria-label="Map controls">
-    <div class="kit-scroll">
-      <section>
-        <p class="label">Map</p>
-        <div class="maps" id="maps"></div>
-        <div class="variants" id="variants" hidden></div>
-      </section>
-
-      <section id="keys-sec" hidden>
-        <details class="drop" id="keys-drop">
-          <summary><span class="label">My keys</span><span class="sum" id="keys-sum"></span></summary>
-        <div class="toggles" id="reach-row" hidden><button class="chip" id="reach-only" aria-pressed="true" style="--c: var(--door-ok)"><i></i>Only loot I can reach</button></div>
-        <div class="keys" id="keys"></div>
-        <p class="note" id="keys-note"></p>
-        </details>
-      </section>
-
-      <section id="floors-sec" hidden>
-        <p class="label">Floors</p>
-        <div class="floors" id="floors"></div>
-      </section>
-
+    <button class="layers-btn" id="layers-btn" aria-expanded="false" aria-controls="layers"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>Layers</button>
+    <div class="float layers" id="layers" hidden>
       <section>
         <p class="label">Show on map</p>
         <div class="toggles" id="toggles">
           <button class="chip" data-t="glow" aria-pressed="true" style="--c: var(--glow)"><i></i>Loose loot</button>
           <button class="chip" data-t="cont" aria-pressed="true" style="--c: var(--cont)"><i></i>Containers</button>
-          <button class="chip" data-t="ov" aria-pressed="false" style="--c: var(--fg)"><i></i>2D map</button>
-          <button class="chip" data-t="lm" aria-pressed="true" style="--c: var(--door-breach)"><i></i>Landmarks</button>
           <button class="chip" data-t="pins" aria-pressed="true" style="--c: var(--glow)"><i></i>Hotspot pins</button>
-          <button class="chip" data-t="names" aria-pressed="true" style="--c: var(--fg)"><i></i>Place names</button>
           <button class="chip" data-t="p" aria-pressed="true" style="--c: var(--exit-pmc)"><i></i>PMC extracts</button>
           <button class="chip" data-t="s" aria-pressed="true" style="--c: var(--exit-scav)"><i></i>Scav extracts</button>
           <button class="chip" data-t="t" aria-pressed="true" style="--c: var(--transit)"><i></i>Transits</button>
+          <button class="chip" data-t="names" aria-pressed="true" style="--c: var(--fg)"><i></i>Place names</button>
+          <button class="chip" data-t="lm" aria-pressed="true" style="--c: var(--door-breach)"><i></i>Landmarks</button>
+          <button class="chip" data-t="ov" aria-pressed="false" style="--c: var(--muted)"><i></i>2D map (tarkov.dev)</button>
         </div>
       </section>
-
       <section>
         <p class="label">Height range</p>
         <div class="slice">
@@ -362,7 +377,13 @@ body { margin: 0; }
         </div>
       </section>
     </div>
-  </aside>
+    <div class="float floors-float" id="floors-sec" hidden>
+      <div class="floors" id="floors" role="group" aria-label="Floor"></div>
+    </div>
+    <div class="tip" id="tip" hidden></div>
+    <div class="loading" id="loading">Loading spawn data</div>
+    <div class="help">Drag to move, right-drag to orbit, scroll to zoom. Hover a dot for its loot.</div>
+  </main>
 </div>
 
 <script type="importmap">
@@ -398,7 +419,10 @@ const $ = (id) => document.getElementById(id);
 const fmtPct = (p) => p >= 0.995 ? "100%" : p >= 0.1 ? Math.round(p * 100) + "%" : p >= 0.01 ? (p * 100).toFixed(1) + "%" : p > 0 ? (p * 100).toFixed(2) + "%" : "0%";
 const fmtPer = (e) => e >= 1 ? `${e >= 10 ? e.toFixed(0) : e.toFixed(1)} per raid` : `${fmtPct(e)} per raid`;
 const fmtExp = (e) => e >= 10 ? e.toFixed(0) : e >= 1 ? e.toFixed(1) : e >= 0.01 ? e.toFixed(2) : e > 0 ? "<0.01" : "0";
-const fmtRub = (r) => r >= 1e6 ? "₽" + (r / 1e6).toFixed(1) + "M" : r >= 1e3 ? "₽" + Math.round(r / 1e3) + "k" : "₽" + r;
+// odds a player reads at a glance: "1 in 25 raids" for rare things, a percentage for likely ones
+const oddsPhrase = (p) => p >= 0.995 ? "every raid" : p >= 0.2 ? `${Math.round(p * 100)}% of raids` : `1 in ${Math.max(2, Math.round(1 / p))} raids`;
+const fmtOdds = (p) => p >= 0.995 ? "every raid" : p >= 0.2 ? `${Math.round(p * 100)}%` : p > 0 ? `1 in ${Math.max(2, Math.round(1 / p))} raids` : "never";
+const fmtRub = (r) => r >= 995e3 ? "₽" + (r / 1e6).toFixed(1) + "M" : r >= 1e3 ? "₽" + Math.round(r / 1e3) + "k" : "₽" + r;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 let INDEX, ITEMS, CATS, TOP_OF = {};
@@ -490,7 +514,7 @@ new ResizeObserver(resize).observe(stage);
 
 // ---------- data ----------
 // every push stamps BUILD, so browsers never mix a cached old file with a new one (Pages caches 10 min)
-const BUILD = "202611010209";
+const BUILD = "202611010235";
 { const f0 = window.fetch.bind(window);
   window.fetch = (u, o) => f0(typeof u === "string" && /^(data|maps)\//.test(u) ? u + (u.includes("?") ? "&" : "?") + "v=" + BUILD : u, o); }
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
@@ -1118,7 +1142,8 @@ function renderKeys(dump) {
     : `<p class="empty">No keyed doors on this map.</p>`;
   $("reach-row").hidden = !REACH;
   const have = rows.filter((r) => MY_KEYS.has(r.id)).length, top = rows.find((r) => best.has(r.id));
-  $("keys-sum").innerHTML = !rows.length ? "No keyed doors" : `<span>${have} of ${rows.length} ticked</span>${top ? `<span>Try <b>${esc(shortKey(top.name.replace(/^TerraGroup (?!Labs)/, "")))}</b></span>` : ""}`;
+  $("keys-sum").innerHTML = !rows.length ? "No locked doors on this map need a key." : `<span>You have ${have} of the ${rows.length} keys for this map.${top ? ` Best one to get next: <b>${esc(shortKey(top.name.replace(/^TerraGroup (?!Labs)/, "")))}</b>.` : ""}</span>`;
+  $("keys-badge").textContent = rows.length ? `${have} of ${rows.length}` : "";
   $("reach-only").setAttribute("aria-pressed", String(ONLY_REACH));
   const counts = { need: 0, ok: 0, breach: 0, sealed: 0 };
   for (const d of doorList) { const s = doorStatus(d); if (s in counts) counts[s]++; }
@@ -1132,8 +1157,28 @@ $("keys").addEventListener("click", (e) => {
   try { localStorage.setItem("atlas-keys", JSON.stringify([...MY_KEYS])); } catch {}
   colorDoors(); applyReach(); refresh();
 });
-try { $("keys-drop").open = localStorage.getItem("atlas-keys-open") === "1"; } catch {}
-$("keys-drop").addEventListener("toggle", () => { try { localStorage.setItem("atlas-keys-open", $("keys-drop").open ? "1" : "0"); } catch {} });
+// ---------- panel tabs and the Layers menu ----------
+let TAB = "loot";
+try { TAB = localStorage.getItem("atlas-tab") || "loot"; } catch {}
+function showTab(t) {
+  TAB = t;
+  document.querySelectorAll("#tabs .tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
+  for (const id of ["loot", "run", "keys"]) $("tab-" + id).hidden = id !== t;
+  if (spawnPts) spawnPts.visible = t === "run";
+  $("labels").hidden = !SHOW.pins || t === "run";
+  try { localStorage.setItem("atlas-tab", t); } catch {}
+}
+$("tabs").addEventListener("click", (e) => { const b = e.target.closest(".tab"); if (b) showTab(b.dataset.tab); });
+$("tabs").addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  const order = ["loot", "run", "keys"], i = (order.indexOf(TAB) + (e.key === "ArrowRight" ? 1 : 2)) % 3;
+  showTab(order[i]); document.querySelector(`#tabs .tab[data-tab="${order[i]}"]`).focus();
+});
+$("layers-btn").addEventListener("click", () => { const open = $("layers").hidden; $("layers").hidden = !open; $("layers-btn").setAttribute("aria-expanded", String(open)); });
+document.addEventListener("pointerdown", (e) => {
+  if (!$("layers").hidden && !e.target.closest("#layers") && !e.target.closest("#layers-btn")) { $("layers").hidden = true; $("layers-btn").setAttribute("aria-expanded", "false"); }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("layers").hidden) { $("layers").hidden = true; $("layers-btn").setAttribute("aria-expanded", "false"); $("layers-btn").focus(); } });
 $("reach-only").addEventListener("click", () => {
   ONLY_REACH = !ONLY_REACH; try { localStorage.setItem("atlas-only-reach", ONLY_REACH ? "1" : "0"); } catch {}
   applyReach(); refresh();
@@ -1210,7 +1255,7 @@ function applyToggles() {
   if (glowPts) glowPts.visible = SHOW.glow;
   if (contPts) contPts.visible = SHOW.cont;
   if (landmarkObj) landmarkObj.visible = SHOW.lm;
-  $("labels").hidden = !SHOW.pins;
+  $("labels").hidden = !SHOW.pins || TAB === "run"; // the run has its own numbered pins
   if (beams) {
     const a = beams.geometry.attributes.aOn, d = exitDots.geometry.attributes.aOn;
     let i = 0;
@@ -1582,11 +1627,13 @@ function buildLandmarks(data) {
 }
 
 // ---------- loot run (maps/<id>-paths.bin + -paths.json from tools/build_paths.py) ----------
-// From the chosen spawn, visit the top stops of the current search (loose loot + containers) in the shortest
-// possible order (exact: Held-Karp over walking distances), then finish at whichever extract is nearest.
+// Goal-driven: value (expected ₽ to bring home), bag space (free slots to fill, by real item sizes) or item count
+// (how many of the searched item). Places (spots and containers within ~6 m) are valued for the current search;
+// the route is the shortest walk from the spawn through places that reach the goal, ending at the nearest extract:
+// best gain per extra metre insertion, then 2-opt / move / drop / swap, then exact order (Held-Karp) up to 12 places.
 // Every extract is open from every spawn on this server and raids have no time limit, so only distance counts.
-const RUN = { spawn: -1, n: 6, anyKey: false, open: false };
-try { Object.assign(RUN, JSON.parse(localStorage.getItem("atlas-run") || "{}"), { spawn: -1 }); } catch {}
+const RUN = { spawn: -1, goal: "value", t: { value: 50, bag: 24, count: 2 }, anyKey: false };
+try { const sv = JSON.parse(localStorage.getItem("atlas-run") || "{}"); if (sv.goal) RUN.goal = sv.goal; if (sv.t) Object.assign(RUN.t, sv.t); RUN.anyKey = !!sv.anyKey; } catch {}
 let PG = null, PJ = null, runObj = null, runMarks = [], spawnPts = null, runTimer = 0;
 const pathCache = {};
 async function loadPaths(id) {
@@ -1630,65 +1677,202 @@ function dijkstra(src, keys) {
   }
   return { dist, prev, pe };
 }
-// stops: the best areas of the current search, loose spots and (when shown) containers, a stop per ~10 m area
-function runStops(N) {
-  const cell = 10, floor = 3.5, cells = new Map();
-  const add = (x, y, z, c, node) => {
-    if (c <= 0 || node < 0) return;
+// goals: what the run is for. Target slider meaning per goal.
+const GOALS = {
+  value: { label: "Value", min: 0, max: 100, fmt: (k) => fmtRub(goalTarget("value", k)), note: "Expected loot worth (handbook prices) to come home with. The route is the shortest walk whose places add up to it." },
+  bag: { label: "Free slots", min: 4, max: 100, fmt: (k) => `${k} slots`, note: "Free space in your backpack, rig and pockets. The route fills it with the most loot for the walking, using each item's real size." },
+  count: { label: "How many", min: 1, max: 10, fmt: (k) => `${k}`, note: "" },
+};
+const goalTarget = (g, k) => g === "value" ? Math.round(1e5 * Math.pow(10, k / 50) / 1e4) * 1e4 : k;   // value: 100k .. 10M, log scale
+function searchLabel() {
+  const f = filterState();
+  if (sel.tpl) return ITEMS[sel.tpl]?.[0] || "this item";
+  if (f.q) return `items matching “${$("q").value.trim()}”`;
+  const cat = f.cat ? (CATS[f.cat]?.[0] || "this loot type") : "loot";
+  return `${cat}${f.min ? ` worth ${fmtRub(f.min)}+` : ""}`;
+}
+// places: spots and containers within ~6 m (same floor) form one place, valued for the current search
+function runPlaces() {
+  const cell = 6, floor = 3.5, cells = new Map(), set = selSet || new Set();
+  const add = (x, y, z, node, val, slots, cnt, p, member) => {
+    if (cnt <= 0 || node < 0) return;
     const k = `${Math.floor(x / cell)},${Math.floor(y / floor)},${Math.floor(z / cell)}`;
-    const h = cells.get(k) || { s: 0, best: 0, node: -1, x, y, z }; h.s += c;
-    if (c > h.best) { h.best = c; h.node = node; h.x = x; h.y = y; h.z = z; }
-    cells.set(k, h);
+    let h = cells.get(k);
+    if (!h) { h = { val: 0, slots: 0, cnt: 0, miss: 1, best: -1, node: -1, x, y, z, members: [] }; cells.set(k, h); }
+    h.val += val; h.slots += slots; h.cnt += cnt; h.miss *= 1 - p; h.members.push(member);
+    if (val > h.best) { h.best = val; h.node = node; h.x = x; h.y = y; h.z = z; }
   };
-  for (let i = 0; i < chanceAt.length; i++) add(map.points[i][0], map.points[i][1], map.points[i][2], chanceAt[i], PJ.pt[i] ?? -1);
-  if (contChance) contData.forEach((c, i) => add(c.x, c.y, c.z, contChance[i], PJ.ct[c.id] ?? -1));
-  const out = [];
-  for (const h of [...cells.values()].sort((a, b) => b.s - a.s)) {
-    if (out.some((o) => Math.hypot(o.x - h.x, o.z - h.z) < cell * 1.6 && Math.abs(o.y - h.y) < 3)) continue;
-    out.push(h); if (out.length >= N) break;
+  for (let i = 0; i < map.points.length; i++) {
+    if (ptOK && !ptOK[i]) continue;
+    let val = 0, sl = 0, cnt = 0;
+    for (const [t, c] of map.byPoint[i]) if (set.has(t)) { const m = ITEMS[t]; val += c * (m?.[3] || 0); sl += c * (m?.[4] || 1); cnt += c; }
+    const pt = map.points[i]; add(pt[0], pt[1], pt[2], PJ.pt[i] ?? -1, val, sl, cnt, chanceAt[i], ["s", i]);
   }
-  return out;
+  if (contChance) contData.forEach((c, i) => {
+    if (!contChance[i]) return;
+    const [tpl, spawn] = map.containers.ids[c.id], o = map.containers.odds[tpl] || {};
+    let val = 0, sl = 0, cnt = 0;
+    for (const t of set) if (o[t]) { const m = ITEMS[t], q = spawn * o[t]; val += q * (m?.[3] || 0); sl += q * (m?.[4] || 1); cnt += q; }
+    add(c.x, c.y, c.z, PJ.ct[c.id] ?? -1, val, sl, cnt, contChance[i], ["c", i]);
+  });
+  return [...cells.values()];
+}
+// where a place is, the way players say it: the nearest named place (tarkov.dev labels) and the floor
+const ORD = ["Basement", "Ground floor", "2nd floor", "3rd floor", "4th floor", "5th floor", "6th floor"];
+function placeLoc(pl) {
+  const bid = MODEL_OF[map.id] || map.id, B = blockCache[bid];
+  let best = null, bd = 1e9;
+  for (const l of B?.labels || []) {
+    const d = Math.hypot(l.x - pl.x, l.z - pl.z) + ((l.lo > -999 && (pl.y < l.lo - 1 || pl.y > l.hi + 1)) ? 60 : 0);
+    if (d < bd) { bd = d; best = l.n; }
+  }
+  const name = best || map.name, near = !best || bd >= 70;
+  const bands = FLOORS[bid];
+  let floor;
+  if (bands && (bid === "interchange" || !B?.ground?.kind)) { const i = bands.findIndex(([, lo, hi]) => pl.y >= lo && pl.y < hi); floor = bands[Math.max(0, i)]?.[0] || ""; }
+  else { const lv = (B ? storeyFn(B, bid) : () => 0)(pl.x, pl.y, pl.z); floor = lv < 0 ? "Basement" : lv === 0 ? "" : ORD[Math.min(lv + 1, ORD.length - 1)]; }
+  return { name, near, floor, key: name + "|" + floor };
+}
+// the best few things to expect at a place, for the step list
+function placeItems(members) {
+  const set = selSet || new Set(), agg = new Map();
+  for (const [kind, i] of members) {
+    if (kind === "s") { for (const [t, c] of map.byPoint[i]) if (set.has(t)) agg.set(t, 1 - (1 - (agg.get(t) || 0)) * (1 - c)); }
+    else { const c = contData[i], [tpl, spawn] = map.containers.ids[c.id], o = map.containers.odds[tpl] || {}; for (const t of set) if (o[t]) agg.set(t, 1 - (1 - (agg.get(t) || 0)) * (1 - spawn * o[t])); }
+  }
+  return [...agg].sort((a, b) => b[1] * (ITEMS[b[0]]?.[3] || 0) - a[1] * (ITEMS[a[0]]?.[3] || 0)).slice(0, 3)
+    .map(([t, p]) => { const m = ITEMS[t] || [t, t], nm = m[0].length <= 24 ? m[0] : (m[1] || m[0]); return `${nm} (${fmtOdds(p)})`; }).join(", ");
+}
+// Dijkstra that stops once every target is settled (typed-array heap)
+function distancesFrom(src, keys, targets) {
+  const n = PG.n, dist = new Float64Array(n).fill(Infinity); dist[src] = 0;
+  let need = new Set(targets), hk = new Float64Array(1024), hv = new Int32Array(1024), hn = 0;
+  const push = (k, v) => { if (hn === hk.length) { const k2 = new Float64Array(hn * 2), v2 = new Int32Array(hn * 2); k2.set(hk); v2.set(hv); hk = k2; hv = v2; }
+    let i = hn++; while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; } hk[i] = k; hv[i] = v; };
+  push(0, src);
+  while (hn) {
+    const d = hk[0], u = hv[0]; hn--;
+    if (hn) { const k = hk[hn], v = hv[hn]; let i = 0; for (;;) { let c = 2 * i + 1; if (c >= hn) break; if (c + 1 < hn && hk[c + 1] < hk[c]) c++; if (hk[c] >= k) break; hk[i] = hk[c]; hv[i] = hv[c]; i = c; } hk[i] = k; hv[i] = v; }
+    if (d > dist[u]) continue;
+    if (need.delete(u) && !need.size) break;
+    for (let q = PG.off[u]; q < PG.off[u + 1]; q++) {
+      const e = PG.ne[q]; if (!edgeOK(e, keys)) continue;
+      const v = PG.nb[q], nd = d + PG.w[e];
+      if (nd < dist[v]) { dist[v] = nd; push(nd, v); }
+    }
+  }
+  return dist;
 }
 function solveRun() {
   clearRun();
   if (!PG || RUN.spawn < 0) { renderRunOut(null); return; }
   const sp = PJ.sp[RUN.spawn], start = sp[3];
   if (start < 0) { renderRunOut({ err: "This spawn isn't on the walk map." }); return; }
-  const keys = MY_KEYS, from0 = dijkstra(start, keys);
-  let stops = runStops(RUN.n * 3).filter((h) => Number.isFinite(from0.dist[h.node]));
-  const blocked = runStops(RUN.n).filter((h) => !Number.isFinite(from0.dist[h.node])).length;
-  stops = stops.slice(0, RUN.n);
-  if (!stops.length) { renderRunOut({ err: "Nothing on this search can be reached from this spawn with your keys." }); return; }
-  const k = stops.length, trees = [from0, ...stops.map((h) => dijkstra(h.node, keys))];
-  const nodes = [start, ...stops.map((h) => h.node)];
-  const D = (a, b) => trees[a].dist[nodes[b]]; // a, b index into nodes (0 = spawn)
-  const exits = (map.exitsForRun || []);
-  const endCost = stops.map((_, j) => { let best = [Infinity, -1]; for (const [ei, node] of exits) { const d = trees[j + 1].dist[node]; if (d < best[0]) best = [d, ei]; } return best; });
-  // Held-Karp: dp[mask][j] = shortest walk from the spawn through the stops in mask, ending at stop j
-  const M = 1 << k, dp = new Float64Array(M * k).fill(Infinity), par = new Int8Array(M * k).fill(-1);
-  for (let j = 0; j < k; j++) dp[(1 << j) * k + j] = D(0, j + 1);
-  for (let mask = 1; mask < M; mask++) for (let j = 0; j < k; j++) {
-    const cur = dp[mask * k + j]; if (!(mask & (1 << j)) || cur === Infinity) continue;
-    for (let q = 0; q < k; q++) { if (mask & (1 << q)) continue; const nm = mask | (1 << q), v = cur + D(j + 1, q + 1); if (v < dp[nm * k + q]) { dp[nm * k + q] = v; par[nm * k + q] = j; } }
+  $("run-sum").innerHTML = "working…";
+  const keys = MY_KEYS, goal = RUN.goal, target = goalTarget(goal, RUN.t[goal]);
+  const exits = map.exitsForRun || [], exitNodes = exits.map((e) => e[1]);
+  const all = runPlaces();
+  if (!all.length) { renderRunOut({ err: "Nothing on this map matches your search." }); return; }
+  const d0 = distancesFrom(start, keys, [...all.map((p) => p.node), ...exitNodes]);
+  const reach = all.filter((p) => Number.isFinite(d0[p.node]));
+  const blockedVal = all.filter((p) => !Number.isFinite(d0[p.node])).reduce((t, p) => t + (goal === "count" ? p.cnt : p.val), 0);
+  if (!reach.length) { renderRunOut({ err: "Nothing on your search can be reached from this spawn with your keys." }); return; }
+  // what the whole map gives for this search, checking everything you can reach
+  const mapMax = { val: reach.reduce((t, p) => t + p.val, 0), slots: reach.reduce((t, p) => t + p.slots, 0), cnt: reach.reduce((t, p) => t + p.cnt, 0) };
+  const want = goal === "value" ? target : goal === "count" ? target : target;
+  const avail = goal === "value" ? mapMax.val : goal === "count" ? mapMax.cnt : mapMax.slots;
+  // a target the map can't give on average: aim for the part of it that's worth walking for
+  const aim = goal === "bag" ? Math.min(target, avail * 0.6) : (want > avail * 0.6 ? avail * 0.6 : want);
+  const MAXP = 28;
+  // candidates: the best places for the goal (bag space: the best value and the best value per slot)
+  const gain = (p) => goal === "count" ? p.cnt : p.val;
+  const top = Math.max(...reach.map(gain));
+  let cand = [...reach].filter((p) => gain(p) >= top * 0.1).sort((a, b) => gain(b) - gain(a)).slice(0, 60);
+  if (goal === "bag") for (const p of [...reach].sort((a, b) => b.val / Math.max(b.slots, 0.05) - a.val / Math.max(a.slots, 0.05)).slice(0, 25)) if (!cand.includes(p)) cand.push(p);
+  const K = cand.length, N = K + 1, D = new Float64Array(N * N), E = new Float64Array(N), EI = new Int32Array(N);
+  const nodesAll = [start, ...cand.map((p) => p.node)], tg = [...nodesAll, ...exitNodes];
+  const fill = (i, dist) => { for (let j = 0; j < N; j++) D[i * N + j] = dist[nodesAll[j]]; E[i] = Infinity; EI[i] = -1;
+    exits.forEach(([ei, node]) => { if (dist[node] < E[i]) { E[i] = dist[node]; EI[i] = ei; } }); };
+  fill(0, d0);
+  for (let i = 1; i < N; i++) fill(i, distancesFrom(nodesAll[i], keys, tg));
+  // route = candidate indices (1..K); cost = spawn -> places -> nearest extract
+  const cost = (r) => { if (!r.length) return E[0]; let c = D[r[0]]; for (let i = 1; i < r.length; i++) c += D[r[i - 1] * N + r[i]]; return c + E[r[r.length - 1]]; };
+  const insertCost = (r, c) => { // cheapest place to slot c in, and the extra metres
+    let best = Infinity, at = 0;
+    for (let k = 0; k <= r.length; k++) {
+      const a = k === 0 ? 0 : r[k - 1], before = k === r.length ? E[a] : D[a * N + r[k]];
+      const after = D[a * N + c] + (k === r.length ? E[c] : D[c * N + r[k]]);
+      if (after - before < best) { best = after - before; at = k; }
+    }
+    return [best, at];
+  };
+  const G = (i) => gain(cand[i - 1]), SL = (i) => cand[i - 1].slots;
+  let route = [], got = 0, slots = 0;
+  const used = new Set(), met = () => route.length >= MAXP || (goal === "bag" ? slots >= aim - 0.05 : got >= aim - 1e-9);
+  while (!met()) {
+    let best = null;
+    for (let c = 1; c <= K; c++) {
+      if (used.has(c) || !Number.isFinite(D[c])) continue;
+      if (goal === "bag" && slots + SL(c) > target + 0.25) continue;
+      const [dc, at] = insertCost(route, c); if (!Number.isFinite(dc)) continue;
+      const g = goal === "bag" ? G(c) : Math.min(G(c), aim - got);
+      const ratio = g / (Math.max(dc, 0) + 8);
+      if (!best || ratio > best[0]) best = [ratio, c, at];
+    }
+    if (!best) break;
+    route.splice(best[2], 0, best[1]); used.add(best[1]); got += G(best[1]); slots += SL(best[1]);
   }
-  let best = Infinity, last = -1;
-  for (let j = 0; j < k; j++) { const v = dp[(M - 1) * k + j] + endCost[j][0]; if (v < best) { best = v; last = j; } }
-  if (last < 0 || best === Infinity) { renderRunOut({ err: "No extract can be reached from these stops with your keys." }); return; }
-  const order = []; for (let mask = M - 1, j = last; j >= 0;) { order.unshift(j); const pj = par[mask * k + j]; mask ^= 1 << j; j = pj; }
-  // walk it: area by area, noting the doors on the way
-  const legs = [], seq = [0, ...order.map((j) => j + 1)];
-  const walk = (tree, to) => { const ns = [], es = []; for (let v = to; v >= 0; v = tree.prev[v]) { ns.unshift(v); if (tree.pe[v] >= 0) es.unshift(tree.pe[v]); } return { ns, es }; };
-  for (let i = 1; i < seq.length; i++) legs.push(walk(trees[seq[i - 1]], nodes[seq[i]]));
-  const [ed, ei] = endCost[last]; const exitNode = exits.find((x) => x[0] === ei)[1];
-  legs.push(walk(trees[last + 1], exitNode));
-  drawRun(legs, order.map((j) => stops[j]), sp, ei, best, blocked);
+  if (!route.length) { renderRunOut({ err: goal === "bag" ? "Nothing on your search fits in that many slots." : "No reachable place helps with this goal." }); return; }
+  // tighten: better order (2-opt, move one), drop what the goal doesn't need, swap in better places
+  const improveOrder = () => { let better = true, c0 = cost(route);
+    while (better) { better = false;
+      for (let i = 0; i < route.length - 1; i++) for (let j = i + 1; j < route.length; j++) {
+        const r = route.slice(0, i).concat(route.slice(i, j + 1).reverse(), route.slice(j + 1)), c = cost(r);
+        if (c < c0 - 1e-6) { route = r; c0 = c; better = true; } }
+      for (let i = 0; i < route.length; i++) { const x = route[i], rest = route.filter((_, k) => k !== i), [dc, at] = insertCost(rest, x);
+        const r = rest.slice(); r.splice(at, 0, x); const c = cost(r); if (c < c0 - 1e-6) { route = r; c0 = c; better = true; } } } };
+  improveOrder();
+  for (let pass = 0; pass < 3 && goal !== "bag"; pass++) {
+    let changed = false;
+    for (const x of [...route]) { // drop places the target doesn't need, if that shortens the walk
+      if (got - G(x) >= aim - 1e-9) { const r = route.filter((y) => y !== x); if (cost(r) < cost(route)) { route = r; got -= G(x); used.delete(x); changed = true; } } }
+    for (let i = 0; i < route.length; i++) for (let c = 1; c <= K; c++) { // swap one in, one out
+      if (used.has(c) || !Number.isFinite(D[c]) || got - G(route[i]) + G(c) < aim - 1e-9) continue;
+      const rest = route.filter((_, k) => k !== i), [dc, at] = insertCost(rest, c), r = rest.slice(); r.splice(at, 0, c);
+      if (cost(r) < cost(route) - 0.5) { used.delete(route[i]); used.add(c); got += G(c) - G(route[i]); route = r; changed = true; }
+    }
+    if (changed) improveOrder(); else break;
+  }
+  // exact order for up to 12 places (Held-Karp), keeping the same places
+  if (route.length <= 12) {
+    const k = route.length, M = 1 << k, dp = new Float64Array(M * k).fill(Infinity), par = new Int8Array(M * k).fill(-1);
+    for (let j = 0; j < k; j++) dp[(1 << j) * k + j] = D[route[j]];
+    for (let mask = 1; mask < M; mask++) for (let j = 0; j < k; j++) {
+      const cur = dp[mask * k + j]; if (!(mask & (1 << j)) || cur === Infinity) continue;
+      for (let q = 0; q < k; q++) { if (mask & (1 << q)) continue; const nm = mask | (1 << q), v = cur + D[route[j] * N + route[q]]; if (v < dp[nm * k + q]) { dp[nm * k + q] = v; par[nm * k + q] = j; } }
+    }
+    let best = Infinity, last = -1; for (let j = 0; j < k; j++) { const v = dp[(M - 1) * k + j] + E[route[j]]; if (v < best) { best = v; last = j; } }
+    if (last >= 0) { const ord = []; for (let mask = M - 1, j = last; j >= 0;) { ord.unshift(route[j]); const pj = par[mask * k + j]; mask ^= 1 << j; j = pj; } route = ord; }
+  }
+  // walk it with full paths (one Dijkstra per leg, now that the places are chosen)
+  const places = route.map((c) => cand[c - 1]);
+  const tree = (src) => dijkstra(src, keys);
+  const walk = (t, to) => { const ns = [], es = []; for (let v = to; v >= 0; v = t.prev[v]) { ns.unshift(v); if (t.pe[v] >= 0) es.unshift(t.pe[v]); } return { ns, es }; };
+  const legs = []; let from = start;
+  for (const p of places) { legs.push(walk(tree(from), p.node)); from = p.node; }
+  const lastI = route[route.length - 1], ei = EI[lastI], exitNode = exits.find((x) => x[0] === ei)?.[1];
+  if (exitNode == null) { renderRunOut({ err: "No extract can be reached from these places with your keys." }); return; }
+  legs.push(walk(tree(from), exitNode));
+  const sum = { val: places.reduce((t, p) => t + p.val, 0), slots: places.reduce((t, p) => t + p.slots, 0), cnt: places.reduce((t, p) => t + p.cnt, 0),
+    pAny: 1 - places.reduce((t, p) => t * p.miss, 1), short: aim < target - 1e-9, avail, mapMax, blockedVal };
+  drawRun(legs, places, sp, ei, cost(route), sum);
 }
 function clearRun() {
   if (runObj) { scene.remove(runObj); runObj.traverse((o) => o.geometry?.dispose()); runObj = null; }
   $("runmarks").innerHTML = ""; runMarks = [];
 }
 const runMat = new THREE.MeshBasicMaterial({ color: 0xff5fd2, transparent: true, opacity: 0.92, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
-function drawRun(legs, stops, sp, exitIdx, total, blocked) {
+function drawRun(legs, stops, sp, exitIdx, total, sum) {
   const P = (i) => { const [x, y, z] = toWorld(PG.pos[i * 3], PG.pos[i * 3 + 1] + 0.35, PG.pos[i * 3 + 2]); return new THREE.Vector3(x, y, z); };
   const pts = []; for (const l of legs) for (const v of l.ns) { const p = P(v); if (!pts.length || pts[pts.length - 1].distanceTo(p) > 0.05) pts.push(p); }
   const s0 = toWorld(sp[0], sp[1] + 0.35, sp[2]); pts.unshift(new THREE.Vector3(...s0));
@@ -1704,10 +1888,22 @@ function drawRun(legs, stops, sp, exitIdx, total, blocked) {
   const dump = blockCache[MODEL_OF[map.id] || map.id]?.dump, ex = dump?.exits?.[exitIdx];
   const mark = (p, html, cls) => { const el = document.createElement("div"); el.className = "rpin " + (cls || ""); el.innerHTML = html; $("runmarks").appendChild(el); runMarks.push({ el, p }); };
   mark(new THREE.Vector3(...s0).setY(s0[1] + 1.2), "S");
-  stops.forEach((h, i) => mark(new THREE.Vector3(...toWorld(h.x, h.y + 1.6, h.z)), String(i + 1)));
+  // locations: consecutive places in the same named place and floor
+  const groups = [];
+  stops.forEach((p, i) => { const loc = placeLoc(p), g = groups[groups.length - 1];
+    if (g && g.loc.key === loc.key) { g.places.push(p); g.loc.near &&= loc.near; } else groups.push({ loc, places: [p], first: i }); });
+  groups.forEach((g, gi) => {
+    const P0 = g.places.reduce((a, p) => (p.val > a.val ? p : a)); g.n = gi + 1;
+    mark(new THREE.Vector3(...toWorld(P0.x, P0.y + 1.6, P0.z)), String(gi + 1));
+    for (const p of g.places) if (p !== P0) mark(new THREE.Vector3(...toWorld(p.x, p.y + 0.8, p.z)), "", "dot");
+    g.members = g.places.flatMap((p) => p.members);
+    g.spots = g.members.filter((m) => m[0] === "s").length; g.boxes = g.members.length - g.spots;
+    g.val = g.places.reduce((t, p) => t + p.val, 0); g.slots = g.places.reduce((t, p) => t + p.slots, 0);
+    g.pAny = 1 - g.places.reduce((t, p) => t * p.miss, 1);
+  });
+  const groupAt = new Map(groups.map((g) => [g.first, g]));
   const steps = [], keysNeeded = new Map();
-  steps.push({ t: "start", label: `Spawn: ${spawnName(RUN.spawn)}` });
-  let run = 0;
+  steps.push({ t: "start", label: `Spawn ${spawnName(RUN.spawn)}` });
   legs.forEach((l, li) => {
     for (const e of l.es) {
       const d = PG.door[e]; if (d < 0) continue;
@@ -1716,12 +1912,12 @@ function drawRun(legs, stops, sp, exitIdx, total, blocked) {
       const name = kind === "key" ? (door?.keyName || key) : "Breach";
       if (kind === "key" && !have) keysNeeded.set(key, name);
       if (door) mark(new THREE.Vector3(...toWorld(door.c[0], door.c[1] + 1.4, door.c[2])), esc(kind === "key" ? shortKey(name).replace(/^TerraGroup (?!Labs)/, "") : "Breach"), "key" + (have ? " ok" : ""));
-      steps.push({ t: "door", have, label: kind === "key" ? `Door: ${name}` : "Door: breach it" });
+      steps.push({ t: "door", have, label: kind === "key" ? `Locked door: ${name}` : "Locked door: breach it" });
     }
-    if (li < stops.length) steps.push({ t: "stop", i: li + 1, h: stops[li] });
+    if (groupAt.has(li)) steps.push({ t: "stop", g: groupAt.get(li) });
   });
-  if (ex) { mark(new THREE.Vector3(...toWorld(ex.x, ex.y + 2, ex.z)), "Exit", "end"); steps.push({ t: "exit", label: `Extract: ${ex.k === "t" ? "transit to " : ""}${ex.n}` }); }
-  renderRunOut({ total, steps, keysNeeded, blocked });
+  if (ex) { mark(new THREE.Vector3(...toWorld(ex.x, ex.y + 2, ex.z)), "Exit", "end"); steps.push({ t: "exit", label: `Extract at ${ex.k === "t" ? "transit to " : ""}${ex.n}` }); }
+  renderRunOut({ total, steps, keysNeeded, sum });
 }
 function spawnName(i) {
   const s = PJ.sp[i], B = blockCache[MODEL_OF[map.id] || map.id];
@@ -1743,7 +1939,7 @@ function renderRunForm() {
   $("run-spawn").innerHTML = `<option value="-1">Choose a spawn</option>` + opts.map(([i, label]) => `<option value="${i}">${esc(label)}</option>`).join("")
     + (RUN.spawn >= 0 && !map.spawnOpts.has(RUN.spawn) ? `<option value="${RUN.spawn}">Spawn you clicked, ${esc(spawnName(RUN.spawn))}</option>` : "");
   $("run-spawn").value = String(RUN.spawn);
-  $("run-n").value = RUN.n; $("run-n-o").textContent = RUN.n;
+  renderGoal();
   $("run-anykey").setAttribute("aria-pressed", String(RUN.anyKey));
   // the exits a run can end at: all of them (every extract is open from every spawn on this server)
   map.exitsForRun = (PJ.ex || []).map((node, i) => [i, node]).filter(([, node]) => node >= 0);
@@ -1751,17 +1947,33 @@ function renderRunForm() {
 }
 function renderRunOut(r) {
   const sum = $("run-sum");
-  if (!r) { sum.innerHTML = `<span>Pick a spawn</span>`; $("run-out").innerHTML = `<p class="note">Choose where you spawn. The route goes through the best spots for your current search in the shortest possible order, then to the nearest extract. It only uses doors you have keys for, unless you allow other keys.</p>`; return; }
-  if (r.err) { sum.innerHTML = `<span>No route</span>`; $("run-out").innerHTML = `<p class="note">${esc(r.err)}</p>`; return; }
-  const stopsN = r.steps.filter((s) => s.t === "stop").length;
-  sum.innerHTML = `<span>${stopsN} stops · <b>${Math.round(r.total)} m</b></span>`;
-  const li = r.steps.map((s) => s.t === "stop"
-    ? `<li><i>${s.i}</i><span>${fmtPer(s.h.s)} of your search here</span><small>${Math.round(s.h.y)} m up</small></li>`
-    : s.t === "door" ? `<li class="door${s.have ? " ok" : ""}"><i>▮</i><span>${esc(s.label)}</span><small>${s.have ? "have" : "need"}</small></li>`
-    : `<li><i>${s.t === "start" ? "S" : "E"}</i><span>${esc(s.label)}</span><small></small></li>`).join("");
-  const keys = r.keysNeeded.size ? `<p class="run-keys">Keys this route needs that you haven't ticked: <b>${[...r.keysNeeded.values()].map(esc).join(", ")}</b></p>` : "";
-  const blocked = r.blocked ? `<p class="note">${r.blocked} of the top spots are behind doors you can't open, so the route skips them. Tick keys in My keys, or allow other keys.</p>` : "";
-  $("run-out").innerHTML = `<div class="run-total"><div><b>${Math.round(r.total)} m</b><span>walking, spawn to extract</span></div><div><b>${stopsN}</b><span>stops</span></div></div><ol class="run-steps">${li}</ol>${keys}${blocked}`;
+  if (!r) { sum.innerHTML = ""; $("run-out").innerHTML = `<p class="note">Choose where you spawn and what the run is for. You get the shortest walk that does it, location by location, ending at the nearest extract. It only goes through doors you have keys for, unless you allow other keys.</p>`; return; }
+  if (r.err) { sum.innerHTML = "no route"; $("run-out").innerHTML = `<p class="note">${esc(r.err)}</p>`; return; }
+  const S = r.sum, goal = RUN.goal, target = goalTarget(goal, RUN.t[goal]), what = searchLabel();
+  const groups = r.steps.filter((s) => s.t === "stop").map((s) => s.g);
+  sum.innerHTML = `<b>${Math.round(r.total)} m</b>`;
+  const slotsTxt = (x) => x < 0.5 ? "under 1 slot" : `about ${Math.max(1, Math.round(x))} slot${Math.round(x) > 1 ? "s" : ""}`;
+  const li = r.steps.map((s) => {
+    if (s.t === "stop") { const g = s.g, parts = [g.spots && `${g.spots} spot${g.spots > 1 ? "s" : ""}`, g.boxes && `${g.boxes} container${g.boxes > 1 ? "s" : ""}`].filter(Boolean).join(" and ");
+      return `<li class="loc"><i>${g.n}</i><span><b>${g.loc.near ? "Near " : ""}${esc(g.loc.name)}</b>${g.loc.floor ? ` · ${esc(g.loc.floor)}` : ""}
+        <span class="what">Check ${parts}. Something here ${oddsPhrase(g.pAny)}.</span>
+        <span class="what">Best finds: ${esc(placeItems(g.members))}</span></span><small>~${fmtRub(Math.round(g.val))}</small></li>`; }
+    if (s.t === "door") return `<li class="door${s.have ? " ok" : ""}"><i>▮</i><span>${esc(s.label)}</span><small>${s.have ? "you have it" : "you need it"}</small></li>`;
+    return `<li><i>${s.t === "start" ? "S" : "E"}</i><span>${esc(s.label)}</span><small></small></li>`;
+  }).join("");
+  const keys = r.keysNeeded.size ? `<p class="run-keys">Keys you'd need: <b>${[...r.keysNeeded.values()].map(esc).join(", ")}</b></p>` : "";
+  let note = "";
+  if (S.short) note = goal === "count"
+    ? `<p class="note">${esc(map.name)} averages ${S.avail < 1 ? S.avail.toFixed(2) : S.avail.toFixed(1)} of ${esc(what)} per raid, even checking every spot you can reach. This route covers the places worth the walk.</p>`
+    : goal === "value" ? `<p class="note">${esc(what)} on ${esc(map.name)} averages ${fmtRub(Math.round(S.avail))} per raid even checking every spot you can reach, so your target isn't realistic. This route goes for the part that's worth the walk.</p>`
+    : `<p class="note">${esc(what)} on ${esc(map.name)} only fills about ${Math.round(S.avail)} slots per raid on average, even checking everything. Widen the search (lower the minimum value) to fill more.</p>`;
+  const blocked = S.blockedVal > 0 ? `<p class="note">Another ${goal === "count" ? S.blockedVal.toFixed(1) + " " + esc(what) : fmtRub(Math.round(S.blockedVal))} on average sits behind doors you can't open. Tick keys in My keys, or allow other keys.</p>` : "";
+  const totals = [
+    `<div><b>${Math.round(r.total)} m</b><span>walk, spawn to extract</span></div>`,
+    goal === "count" ? `<div><b>${fmtOdds(S.pAny)}</b><span>you find at least one</span></div>` : `<div><b>~${fmtRub(Math.round(S.val))}</b><span>loot on an average raid</span></div>`,
+    goal === "bag" ? `<div><b>${Math.round(S.slots)} / ${target}</b><span>slots filled on average</span></div>` : `<div><b>${fmtOdds(S.pAny)}</b><span>you find something</span></div>`,
+  ].join("");
+  $("run-out").innerHTML = `<div class="run-total">${totals}</div><p class="note">Looking for ${esc(what)}. Change the search to plan for something else.</p><ol class="run-steps">${li}</ol>${keys}${note}${blocked}`;
 }
 function buildSpawnPts() {
   if (spawnPts) { scene.remove(spawnPts); spawnPts.geometry.dispose(); spawnPts = null; }
@@ -1769,21 +1981,29 @@ function buildSpawnPts() {
   for (const s of PJ.sp) { pos.push(...toWorld(s[0], s[1] + 0.5, s[2])); const c = new THREE.Color(s[4] === "scav" ? 0xb79cff : 0x74c69d); col.push(c.r, c.g, c.b); on.push(1); }
   const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.setAttribute("aOn", new THREE.Float32BufferAttribute(on, 1));
-  spawnPts = new THREE.Points(g, exitDotMat); spawnPts.renderOrder = 5; spawnPts.visible = $("run-drop").open; scene.add(spawnPts);
+  spawnPts = new THREE.Points(g, exitDotMat); spawnPts.renderOrder = 5; spawnPts.visible = TAB === "run"; scene.add(spawnPts);
 }
-function scheduleRun() { clearTimeout(runTimer); if (PG && RUN.spawn >= 0) runTimer = setTimeout(solveRun, 120); }
-function saveRun() { try { localStorage.setItem("atlas-run", JSON.stringify({ n: RUN.n, anyKey: RUN.anyKey })); } catch {} }
-$("run-spawn").addEventListener("change", () => { RUN.spawn = +$("run-spawn").value; solveRun(); });
-$("run-n").addEventListener("input", () => { RUN.n = +$("run-n").value; $("run-n-o").textContent = RUN.n; saveRun(); scheduleRun(); });
+function scheduleRun() { if (PJ) renderGoal(); clearTimeout(runTimer); if (PG && RUN.spawn >= 0) { $("run-sum").innerHTML = "working…"; runTimer = setTimeout(solveRun, 200); } }
+function saveRun() { try { localStorage.setItem("atlas-run", JSON.stringify({ goal: RUN.goal, t: RUN.t, anyKey: RUN.anyKey })); } catch {} }
+function renderGoal() {
+  const g = GOALS[RUN.goal], el = $("run-t");
+  document.querySelectorAll("#run-goal button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.g === RUN.goal)));
+  el.min = g.min; el.max = g.max; el.value = RUN.t[RUN.goal];
+  $("run-t-l").textContent = g.label; $("run-t-o").textContent = g.fmt(RUN.t[RUN.goal]);
+  $("run-goal-note").textContent = RUN.goal === "count" ? `How many of ${searchLabel()} to come home with (expected). Narrow the search above to the item you want.` : g.note;
+}
+$("run-spawn").addEventListener("change", () => { RUN.spawn = +$("run-spawn").value; scheduleRun(); });
+$("run-t").addEventListener("input", () => { RUN.t[RUN.goal] = +$("run-t").value; $("run-t-o").textContent = GOALS[RUN.goal].fmt(RUN.t[RUN.goal]); saveRun(); scheduleRun(); });
+$("run-goal").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; RUN.goal = b.dataset.g; renderGoal(); saveRun(); scheduleRun(); });
 $("run-anykey").addEventListener("click", () => { RUN.anyKey = !RUN.anyKey; $("run-anykey").setAttribute("aria-pressed", String(RUN.anyKey)); saveRun(); scheduleRun(); });
-$("run-drop").addEventListener("toggle", () => { if (spawnPts) spawnPts.visible = $("run-drop").open; });
+
 // click a spawn dot to start there
 canvas.addEventListener("click", (ev) => {
-  if (!PJ || !$("run-drop").open) return;
+  if (!PJ || TAB !== "run") return;
   const r = canvas.getBoundingClientRect(), mx = ev.clientX - r.left, my = ev.clientY - r.top; let best = -1, bd = 14;
   PJ.sp.forEach((s, i) => { if (s[3] < 0) return; v3.set(...toWorld(s[0], s[1] + 0.5, s[2])).project(camera); if (v3.z > 1) return;
     const d = Math.hypot((v3.x + 1) / 2 * r.width - mx, (1 - v3.y) / 2 * r.height - my); if (d < bd) { bd = d; best = i; } });
-  if (best >= 0) { RUN.spawn = best; renderRunForm(); solveRun(); }
+  if (best >= 0) { RUN.spawn = best; renderRunForm(); scheduleRun(); }
 });
 
 // ---------- 2D map overlay (tarkov.dev SVG maps, CC BY-NC-SA 4.0) ----------
@@ -1944,7 +2164,8 @@ function tick() {
   });
   for (const m of runMarks) { // loot-run markers sit on top of everything
     v3.copy(m.p).project(camera);
-    const vis = v3.z < 1 && Math.abs(v3.x) < 1.05 && Math.abs(v3.y) < 1.05;
+    const onFloor = m.p.y >= uniforms.uYMin.value - 0.5 && m.p.y <= uniforms.uYMax.value + 2; // other floors' markers hide in a floor view
+    const vis = onFloor && v3.z < 1 && Math.abs(v3.x) < 1.05 && Math.abs(v3.y) < 1.05;
     m.el.hidden = !vis; if (vis) { const x = ((v3.x + 1) / 2) * w, y = ((1 - v3.y) / 2) * h; m.el.style.left = x + "px"; m.el.style.top = y + "px"; placed.push([x, y]); }
   }
   const lo = uniforms.uYMin.value, hi = uniforms.uYMax.value;
@@ -1968,6 +2189,7 @@ function tick() {
 
 // ---------- boot ----------
 (async () => {
+  showTab(TAB);
   resize();
   INDEX = await getJSON("data/index.json");
   ITEMS = INDEX.items; CATS = INDEX.categories;

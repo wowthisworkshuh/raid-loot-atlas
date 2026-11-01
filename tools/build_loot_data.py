@@ -220,7 +220,8 @@ def main():
         name = locale.get(f"{tpl} Name") or props.get("Name") or t.get("_name") or tpl
         short = locale.get(f"{tpl} ShortName") or props.get("ShortName") or ""
         cat = hb["ParentId"] if hb else ("quest" if props.get("QuestItem") else "other")
-        meta[tpl] = [name, short, cat, hb["Price"] if hb else 0]
+        slots = max(1, int(props.get("Width", 1) or 1) * int(props.get("Height", 1) or 1))   # inventory grid cells
+        meta[tpl] = [name, short, cat, hb["Price"] if hb else 0, slots]
     cats["quest"] = ["Quest items", None]
     cats["other"] = ["Other", None]
     index["items"] = meta
