@@ -50,7 +50,7 @@ namespace SurvivalPack.MapDump
         ConfigEntry<int> _scanBudget;
         ConfigEntry<bool> _leave;
         ConfigEntry<KeyboardShortcut> _sessionKey, _textsKey;
-        ConfigEntry<string> _sessionMaps, _mapNames, _menuButtons, _sideButton;
+        ConfigEntry<string> _sessionMaps, _mapNames, _menuButtons, _sideButton, _uncheck;
         bool _scanning;
         readonly HashSet<string> _done = new HashSet<string>();
         string _msg; float _msgUntil;
@@ -71,8 +71,9 @@ namespace SurvivalPack.MapDump
             _sessionMaps = Config.Bind("Session", "Maps", "factory4_day,bigmap,woods,shoreline,interchange,lighthouse,rezervbase,sandbox,laboratory,labyrinth", "Maps the session loads, in order (maps that already have scan.bin are skipped).");
             _mapNames = Config.Bind("Session", "Map names on screen", "factory4_day=Factory,bigmap=Customs,woods=Woods,shoreline=Shoreline,interchange=Interchange,lighthouse=Lighthouse,rezervbase=Reserve,sandbox=Ground Zero,laboratory=The Lab,labyrinth=Labyrinth", "How each map is labelled on the map selection screen.");
             _sideButton = Config.Bind("Session", "Side button", "PMC", "Button clicked on the side selection screen (PMC or SCAV).");
-            _menuButtons = Config.Bind("Session", "Menu buttons", "Host raid;Start;Next;Ready;Escape from Tarkov;Back to main menu",
+            _menuButtons = Config.Bind("Session", "Menu buttons", "Start;Host raid;Next;Ready;Escape from Tarkov;Back to main menu",
                 "Buttons the session clicks to move on, first match wins, separated by ;. The map is clicked first on the map screen, and the side button on the side screen.");
+            _uncheck = Config.Bind("Session", "Untick before Start", "Use headless", "Tick boxes the session makes sure are off before it presses Start (Fika's Use headless: the walk map only loads on the game that hosts the raid). Separated by ;.");
             Logger.LogInfo("SurvivalPack.MapDump 0.3.0 ready (Ctrl+F10 in raid, Ctrl+F11 in the menu for an auto session)");
         }
 
@@ -86,7 +87,7 @@ namespace SurvivalPack.MapDump
             {
                 _nextLook = Time.realtimeSinceStartup + 2f;
                 _world = (FindByTypeName("EFT.GameWorld") ?? FindByTypeName("EFT.ClientGameWorld")) as UnityEngine.Object;
-                if (_world != null) { _worldSeenAt = Time.realtimeSinceStartup; _retryNav = 0; }
+                if (_world != null) { _worldSeenAt = Time.realtimeSinceStartup; _retryNav = 0; _blindUntick = null; _untickTries = 0; }
                 else _worldSeenAt = -1;
             }
             if (_textsKey.Value.IsDown()) WriteTexts();
@@ -231,6 +232,23 @@ namespace SurvivalPack.MapDump
             }
             else { _onMapScreenSince = -1; _mapClickedAt = -1; }
 
+            // Fika's host dialog: untick "Use headless" (the walk map only exists on the game that hosts), then Start
+            foreach (var u in _uncheck.Value.Split(';').Select(Norm).Where(u => u.Length > 0))
+            {
+                var box = texts.FirstOrDefault(t => t.text == u);
+                if (box.go == null) continue;
+                var tog = FindToggle(box.go);
+                bool? on = tog == null ? (bool?)null : Get(tog, "isOn") as bool?;
+                if (on == true)
+                {
+                    if (++_untickTries > 3) { try { tog.GetType().GetProperty("isOn")?.SetValue(tog, false); } catch { } _untickTries = 0; }
+                    else Click(((Component)tog).gameObject, "untick " + u);
+                    return;
+                }
+                if (on == null && _blindUntick != u) { _blindUntick = u; Click(box.go, "untick " + u + " (state unknown)"); return; }
+                _untickTries = 0;
+            }
+
             // the side screen: pick the side first
             var side = Norm(_sideButton.Value);
             var sideBtn = texts.FirstOrDefault(t => t.text == side);
@@ -249,6 +267,27 @@ namespace SurvivalPack.MapDump
                 Say($"Auto session stuck: no button to press here (next map {DisplayName(target)}). Click on yourself; it picks up again. Ctrl+F9 writes the texts on screen for a fix.");
                 _menuIdleSince = now;
             }
+        }
+
+        int _untickTries; string _blindUntick;
+        // the tick box that belongs to a label: on the label, a parent, or a parent's other children (a Toggle has a bool isOn)
+        static Component FindToggle(GameObject label)
+        {
+            var t = label.transform;
+            for (int up = 0; up < 4 && t != null; up++, t = t.parent)
+            {
+                Component best = null; float bd = float.MaxValue;
+                foreach (var c in t.GetComponentsInChildren<Component>(true))
+                {
+                    if (c == null) continue;
+                    var p = c.GetType().GetProperty("isOn", BindingFlags.Public | BindingFlags.Instance);
+                    if (p == null || p.PropertyType != typeof(bool)) continue;
+                    float d = Vector3.Distance(c.transform.position, label.transform.position); // the box nearest the label
+                    if (d < bd) { bd = d; best = c; }
+                }
+                if (best != null) return best;
+            }
+            return null;
         }
 
         // a button that's clicked again and again on an unchanged screen is greyed out: try the next one for a while
