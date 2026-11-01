@@ -180,7 +180,7 @@ def outline(V, I, min_loop=6.0):
     return np.concatenate([a[keep], b[keep]], axis=1)
 
 
-def plan_walls(V, I, doors, push=0.3, min_loop=6.0):
+def plan_walls(V, I, doors, push=0.3, min_loop=6.0, owner_ok=None):
     """Walls traced from the walk map's edges, so every room, corridor and stairwell has walls that meet its
     floor exactly. Returns rows x0,y0,z0,x1,y1,z1,kind with kind 0 = wall (2.4 m), 1 = railing at a drop
     (1.0 m), 2 = furniture outline (a hole in the walk map under 6 m round, 0.9 m).
@@ -190,8 +190,8 @@ def plan_walls(V, I, doors, push=0.3, min_loop=6.0):
     for t, tri in enumerate(I):
         for u, v in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
             k = (min(u, v), max(u, v)); own[k] = -1 if k in own else t
-    E = [(k, t) for k, t in own.items() if t >= 0]
-    if not E: return np.zeros((0, 7))
+    E = [(k, t) for k, t in own.items() if t >= 0 and (owner_ok is None or owner_ok[t])]
+    if not E: return np.zeros((0, 7)), np.zeros((0, 4, 3))
     ek = np.array([k for k, _ in E]); et = np.array([t for _, t in E])
     a, b = V[ek[:, 0]], V[ek[:, 1]]
     d = b - a; L = np.linalg.norm(d, axis=1); u = d / np.maximum(L, 1e-9)[:, None]
@@ -248,10 +248,71 @@ def plan_walls(V, I, doors, push=0.3, min_loop=6.0):
     return np.array(out, float).reshape(-1, 7), np.array(strips, float).reshape(-1, 4, 3)
 
 
+def roofed(C, dump, cell=2.0):
+    """True for points with a flat collision shape (roof, ceiling, upper floor) 1.6-12 m above them."""
+    layers = json.load(open(os.path.join(dump, "layers.json")))
+    b = load_coll(os.path.join(dump, "colliders.bin"))
+    want = [int(k) for k, v in layers.items() if v in ("LowPolyCollider", "Default", "HighPolyCollider")]
+    b = b[np.isin(b['layer'], want)]
+    ext = world_extent(b); c = b['c'].astype(np.float64)
+    slab = (ext[:, 1] < 3.0) & (ext[:, 0] > 1.5) & (ext[:, 2] > 1.5) & (ext[:, 0] < 120) & (ext[:, 2] < 120)
+    c, ext = c[slab], ext[slab]
+    lo = c - ext / 2; hi = c + ext / 2
+    from collections import defaultdict
+    grid = defaultdict(list)
+    for k in range(len(c)):
+        for i in range(int(np.floor(lo[k, 0] / cell)), int(np.floor(hi[k, 0] / cell)) + 1):
+            for j in range(int(np.floor(lo[k, 2] / cell)), int(np.floor(hi[k, 2] / cell)) + 1):
+                grid[(i, j)].append(k)
+    out = np.zeros(len(C), bool)
+    ci = np.floor(C[:, 0] / cell).astype(int); cj = np.floor(C[:, 2] / cell).astype(int)
+    for t in range(len(C)):
+        ks = grid.get((ci[t], cj[t]))
+        if not ks: continue
+        ks = np.array(ks); x, y, z = C[t]
+        m = (lo[ks, 0] <= x) & (x <= hi[ks, 0]) & (lo[ks, 2] <= z) & (z <= hi[ks, 2]) & (lo[ks, 1] > y + 1.6) & (lo[ks, 1] < y + 12)
+        out[t] = m.any()
+    return out
+
+
+def indoor_mask(V, I, dump, mid, svgdir, step=0.5, near=0.8):
+    """Outdoor maps: which walk-map triangles are buildings (inside a fan-map building outline, grown by
+    1 m) or clearly off the ground (upper floors, bridges, basements, bunkers). The rest is open ground,
+    which the page draws as the real terrain instead."""
+    import terrain_dump, svgparse, build_blockouts as BB
+    from matplotlib.path import Path
+    from scipy.ndimage import binary_dilation
+    ground = terrain_dump.DumpGround(terrain_dump.load_tiles(os.path.join(dump, "terrain.bin")))
+    C = V[I].mean(1)
+    g = ground.at(C[:, 0], C[:, 2])
+    # off the ground only counts where it's clearly a building: under a roof or ceiling (a collision slab
+    # 1.6-12 m above), or well below the ground (basements, bunkers, tunnels). Rocks and slopes don't.
+    off = np.isnan(g) | (C[:, 1] - g < -2.5) | roofed(C, dump)
+    cfg = BB.MAPS.get(mid)
+    if not cfg: return off
+    vb, feats = svgparse.read(os.path.join(svgdir, cfg["svg"] + ".svg")); M = BB.Mapper(vb, cfg["bounds"], cfg["uv"])
+    x0, z0 = C[:, 0].min() - 5, C[:, 2].min() - 5
+    nx = int((C[:, 0].max() + 5 - x0) / step) + 1; nz = int((C[:, 2].max() + 5 - z0) / step) + 1
+    mask = np.zeros((nz, nx), bool); gx = x0 + np.arange(nx) * step; gz = z0 + np.arange(nz) * step
+    for ft in feats:
+        if cfg["floors"].get(ft["layer"]) != 0 or not set(ft["cls"]) & {"building", "structure"}: continue
+        for raw in ft["rings"]:
+            if len(raw) < 3: continue
+            r = M(raw); lo, hi = r.min(0), r.max(0)
+            j0, j1 = np.searchsorted(gx, lo[0]), np.searchsorted(gx, hi[0]); i0, i1 = np.searchsorted(gz, lo[1]), np.searchsorted(gz, hi[1])
+            if j1 <= j0 or i1 <= i0: continue
+            sub = np.stack(np.meshgrid(gx[j0:j1], gz[i0:i1]), -1).reshape(-1, 2)
+            mask[i0:i1, j0:j1] |= Path(r).contains_points(sub).reshape(i1 - i0, j1 - j0)
+    mask = binary_dilation(mask, iterations=int(round(1.0 / step)))
+    j = np.clip(((C[:, 0] - x0) / step).astype(int), 0, nx - 1); i = np.clip(((C[:, 2] - z0) / step).astype(int), 0, nz - 1)
+    return off | mask[i, j]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dump", required=True); ap.add_argument("--db", required=True)
     ap.add_argument("--tdev-exits", required=True); ap.add_argument("--out", required=True)
+    ap.add_argument("--svg", help="tarkov-dev-svg-maps folder: on maps with terrain, building outlines decide what is indoors")
     ap.add_argument("--loot", help="data/<map>.json: walk pieces with loot on them are kept even if no door joins them")
     a = ap.parse_args()
     meta = json.load(open(os.path.join(a.dump, "meta.json")))
@@ -273,7 +334,13 @@ def main():
     uk, first, inv = np.unique(key, axis=0, return_index=True, return_inverse=True)
     Vw = Vf[first]; Iw = inv.ravel()[If]
     Iw = Iw[(Iw[:, 0] != Iw[:, 1]) & (Iw[:, 1] != Iw[:, 2]) & (Iw[:, 0] != Iw[:, 2])]
-    walls, strips = plan_walls(Vw, Iw, doors_raw)
+    outdoor = meta.get("terrains", 0) > 0 and a.svg
+    if outdoor:
+        indoor = indoor_mask(Vw, Iw, a.dump, mid, a.svg)
+        walls, strips = plan_walls(Vw, Iw, doors_raw, owner_ok=indoor)
+        Iw = Iw[indoor]
+    else:
+        walls, strips = plan_walls(Vw, Iw, doors_raw)
     if len(strips):
         n0 = len(Vw); Vw = np.concatenate([Vw, strips.reshape(-1, 3)])
         q = n0 + np.arange(len(strips) * 4).reshape(-1, 4)

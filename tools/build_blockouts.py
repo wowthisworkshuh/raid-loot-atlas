@@ -14,6 +14,8 @@ from matplotlib.path import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 import svgparse
+import terrain_dump
+import navgraph
 
 # svg file, bounds [[x1,z1],[x2,z2]] in game coords, how svg (s,t in 0..1) maps onto them,
 # layer -> floor index, and the height band of each floor for the indoor maps.
@@ -316,10 +318,107 @@ EXIT_KEY = {"bigmap": "C", "factory4_day": "F", "woods": "W", "shoreline": "S", 
             "rezervbase": "R", "laboratory": "LB", "sandbox": "G", "labyrinth": "LY"}
 
 
-def markers(mid, out, tdev_maps, exits_txt, pts):
+KIND = {"trees": 1, "cement": 2, "tarmac": 3, "gravel": 4, "wood": 6}
+LINE_KIND = {"road_small": 3, "road_medium": 3, "road_large": 3, "road_tarmac": 3, "road_gravel": 4, "railroad": 5}
+
+
+def build_combo_map(mid, cfg, svgdir, pts, dump, out_dir, max_cells=330_000):
+    """A map with a dump: the real ground (terrain.bin) painted with the fan map's ground kinds (forest,
+    pavement, roads, rail), its water at one level per body, rocks, fences, and fan-map buildings only where
+    the walk map has no floor inside them (the walk map draws the rest, see build_dump_assets.py)."""
+    vb, feats = svgparse.read(os.path.join(svgdir, cfg["svg"] + ".svg"))
+    M = Mapper(vb, cfg["bounds"], cfg["uv"])
+    tol = max(0.4, M.scale * 0.6)
+    ground = terrain_dump.DumpGround(terrain_dump.load_tiles(os.path.join(dump, "terrain.bin")))
+    V, I = navgraph.load_nav(os.path.join(dump, "navmesh.bin")); C = V[I].mean(1)
+    xs = sorted([cfg["bounds"][0][0], cfg["bounds"][1][0]]); zs = sorted([cfg["bounds"][0][1], cfg["bounds"][1][1]])
+    x0, x1 = min(xs[0], C[:, 0].min()) - 20, max(xs[1], C[:, 0].max()) + 20
+    z0, z1 = min(zs[0], C[:, 2].min()) - 20, max(zs[1], C[:, 2].max()) + 20
+    step = max(2.0, float(np.sqrt((x1 - x0) * (z1 - z0) / max_cells)))
+    gx, gz, H = terrain_dump.grid(ground, x0, x1, z0, z1, step)
+    GX, GZ = np.meshgrid(gx, gz); cells = np.stack([GX.ravel(), GZ.ravel()], 1)
+    kind = np.zeros(GX.shape, np.uint8)
+    def fill(ring, k):
+        lo, hi = ring.min(0), ring.max(0)
+        j0, j1 = np.searchsorted(gx, lo[0]), np.searchsorted(gx, hi[0]); i0, i1 = np.searchsorted(gz, lo[1]), np.searchsorted(gz, hi[1])
+        if j1 <= j0 or i1 <= i0: return
+        sub = np.stack(np.meshgrid(gx[j0:j1], gz[i0:i1]), -1).reshape(-1, 2)
+        m = Path(ring).contains_points(sub).reshape(i1 - i0, j1 - j0)
+        kind[i0:i1, j0:j1][m] = k
+    def stamp(line, w, k):
+        for a, b in zip(line[:-1], line[1:]):
+            L = np.hypot(*(b - a)); n = max(2, int(L / (step * 0.5)) + 1)
+            for t in np.linspace(0, 1, n):
+                p = a + (b - a) * t; r = max(w / 2, step * 0.6)
+                j0, j1 = np.searchsorted(gx, p[0] - r), np.searchsorted(gx, p[0] + r); i0, i1 = np.searchsorted(gz, p[1] - r), np.searchsorted(gz, p[1] + r)
+                if j1 <= j0 or i1 <= i0: continue
+                dx = gx[j0:j1][None, :] - p[0]; dz = gz[i0:i1][:, None] - p[1]
+                kind[i0:i1, j0:j1][(dx * dx + dz * dz) <= r * r] = k
+    items, counts = [], {}
+    def add(it):
+        items.append(it); key = it["t"] + ":" + it.get("k", ""); counts[key] = counts.get(key, 0) + 1
+    # buildings with walk map inside are drawn from the dump; the rest stay as fan-map blocks
+    walk2 = C[:, [0, 2]]
+    # paint in a fixed order so roads sit on pavement and pavement on forest
+    order = {"trees": 0, "wood": 1, "gravel": 2, "cement": 3, "tarmac": 4}
+    polys, lines, waters = [], [], []
+    for ft in feats:
+        cls = set(ft["cls"]); floor = cfg["floors"].get(ft["layer"])
+        if floor != 0: continue
+        stroked = bool(cls & set(LINE_KIND) | {"fence"} & cls) and not cls & {"cement", "tarmac", "gravel"}
+        for raw in ft["rings"]:
+            ring = M(raw)
+            if stroked:
+                line = simplify(ring, tol)
+                if len(line) < 2: continue
+                if "fence" in cls:
+                    add({"t": "fence", "p": flat(line)}); continue
+                k = next((LINE_KIND[c] for c in cls if c in LINE_KIND), None)
+                if k is not None:
+                    w = next((STROKE[c] for c in cls if c in STROKE), 3 if "railroad" in cls else 5) * M.scale
+                    lines.append((line, max(1.2, w), k))
+                continue
+            ring = simplify(ring, tol)
+            if len(ring) < 3 or area(ring) < 1.0: continue
+            if "water" in cls: waters.append(ring); continue
+            k = next((c for c in sorted(cls & set(KIND), key=lambda c: order[c])), None)
+            if k: polys.append((order[k], ring, KIND[k])); continue
+            if "rock" in cls:
+                g = float(np.nanmin(ground.at(ring[:, 0], ring[:, 1])))
+                add({"t": "block", "k": "rock", "r": flat(ring), "b": R(g - 0.5), "h": R(g + min(4, 1 + math.sqrt(area(ring)) * 0.15))}); continue
+            if cls & {"building", "structure", "chopper", "plane", "misc"}:
+                if Path(ring).contains_points(walk2).sum() >= 3: counts["bld:from-dump"] = counts.get("bld:from-dump", 0) + 1; continue
+                g = float(np.nanmin(ground.at(ring[:, 0], ring[:, 1])))
+                ys = pts[Path(ring).contains_points(pts[:, [0, 2]]), 1]; ys = ys[(ys > g - 1.5) & (ys < g + 60)]
+                a_ = area(ring)
+                top = (float(np.max(ys)) + 2.6) if len(ys) else g + (7 if a_ > 600 else 4.5 if a_ > 40 else 2.5)
+                if cls & {"misc", "chopper", "plane"}: top = min(top, g + 3)
+                add({"t": "block", "k": "bld", "r": flat(ring), "b": R(g - 0.3), "h": R(max(top, g + 2.5))})
+    for _, ring, k in sorted(polys, key=lambda x: x[0]): fill(ring, k)
+    for line, w, k in lines: stamp(line, w, k)
+    for ring in waters:  # one flat level per body: the low edge of the real ground round it
+        edge = ground.at(ring[:, 0], ring[:, 1]); edge = edge[~np.isnan(edge)]
+        if not len(edge): continue
+        level = float(np.quantile(edge, 0.15)) - 0.3
+        wet = pts[Path(ring).contains_points(pts[:, [0, 2]]), 1]
+        if len(wet): level = min(level, float(np.min(wet)) - 0.4)
+        lo, hi = ring.min(0), ring.max(0)
+        m = Path(ring).contains_points(cells).reshape(GX.shape) & (H < level + 0.2)
+        kind[m] = 7
+        add({"t": "flat", "k": "water", "r": flat(ring), "y": R(level)})
+    terrain_dump.write(os.path.join(out_dir, f"{mid}-terrain.bin"), gx, gz, H, kind)
+    counts["terrain"] = f"{len(gx)}x{len(gz)} @ {step:.1f} m"
+    out = {"id": mid, "source": "Ground and walk map from SurvivalPack.MapDump; roads, forest, water, rocks, fences and closed buildings from tarkov.dev SVG maps (CC BY-NC-SA 4.0)",
+           "ground": None, "terrain": f"{mid}-terrain.bin", "combo": True, "items": items}
+    return out, counts, ground.at
+
+
+def markers(mid, out, tdev_maps, exits_txt, pts, ground_fn=None):
     """Place names (tarkov.dev map labels) and extracts/transits, with heights that sit on the blockout."""
     G = out["ground"]
     def ground(x, z):
+        if ground_fn is not None:
+            v = float(ground_fn(np.array([x]), np.array([z]))[0]); return None if np.isnan(v) else v
         if not G:
             return None
         n = G["n"]; h = np.array(G["h"]).reshape(n, n)
@@ -380,15 +479,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--svg", required=True); ap.add_argument("--data", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--tdev-maps", required=True, help="tarkov.dev src/data/maps.json (labels)")
+    ap.add_argument("--dumps", help="folder of MapDump dumps (<map>/terrain.bin ...): maps with real terrain are built from it")
+    ap.add_argument("--only", help="comma-separated map ids")
     a = ap.parse_args()
     tdev = json.load(open(a.tdev_maps))
     exits_txt = [l.strip() for l in open(os.path.join(os.path.dirname(__file__), "extracts-tarkovdev.txt"), encoding="utf-8") if l.strip() and not l.startswith("#")]
     os.makedirs(a.out, exist_ok=True)
     for mid in list(MAPS) + ["labyrinth"]:
+        if a.only and mid not in a.only.split(","): continue
         d = json.load(open(os.path.join(a.data, f"{mid}.json")))
         pts = np.array([[p[0], p[1], p[2]] for p in d["points"]])
-        out, counts = build_svg_map(mid, MAPS[mid], a.svg, pts) if mid in MAPS else build_from_spots(mid, pts)
-        nl, ne = markers(mid, out, tdev, exits_txt, pts)
+        dump = os.path.join(a.dumps, mid) if a.dumps else None
+        has_terrain = dump and os.path.exists(os.path.join(dump, "meta.json")) and json.load(open(os.path.join(dump, "meta.json"))).get("terrains", 0) > 0
+        gfn = None
+        if has_terrain and mid in MAPS:
+            out, counts, gfn = build_combo_map(mid, MAPS[mid], a.svg, pts, dump, a.out)
+        else:
+            out, counts = build_svg_map(mid, MAPS[mid], a.svg, pts) if mid in MAPS else build_from_spots(mid, pts)
+        nl, ne = markers(mid, out, tdev, exits_txt, pts, gfn)
         counts["labels"], counts["exits"] = nl, ne
         path = os.path.join(a.out, f"{mid}-blockout.json")
         with open(path, "w") as f:

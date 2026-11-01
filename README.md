@@ -10,7 +10,13 @@ Loot search and results are on the left; map controls (map, floors, what to show
 
 Each map is a rough "dev blockout": grey grid boxes like an unfinished Source map. Building outlines, floors, walls, roads, water and rocks come from [tarkov.dev's SVG maps](https://github.com/the-hideout/tarkov-dev-svg-maps) (CC BY-NC-SA 4.0), lined up with tarkov.dev's own map bounds; the orientation for each map was checked by how many loot spots land inside buildings (Labs re-fitted: 79% to 90% of spots inside rooms on the right floor). Heights come from the loot spots themselves: the ground from outdoor spots, building tops and floor levels from the spots inside each outline. Each river, lake or sea gets one flat level from its shoreline, and the ground under it is dug out. The Labyrinth has no outline map, so it's built from its spots alone. Place names, extracts and transits come from tarkov.dev and match live Tarkov, so a few may differ on SPT.
 
-`tools/build_blockouts.py` rebuilds them (needs the SVG repo and tarkov.dev's `src/data/maps.json`). A map dump (below) replaces the blockout for any map that has one (Factory and Labs so far), drawn as a floor plan by `tools/build_dump_assets.py`, all from the game's own walk map so walls always meet floors: dark floors only where you can walk, light walls along every walkable edge (pushed out to where the real wall is, 2.4 m tall on every level, never across a doorway), railings at drops, and furniture outlines. Roofs, ceilings and unreachable rooftops are left out. Place names still come from tarkov.dev. Its Labs map isn't drawn to scale (levels up to ~15% larger than the real rooms), so its walls aren't used there. Loot spots more than 15 m from the walk map (Factory has 111 leftover spots about 200 m outside the building) are not drawn or counted.
+`tools/build_blockouts.py` rebuilds them (needs the SVG repo and tarkov.dev's `src/data/maps.json`). Every map except the Labyrinth and Streets now has a map dump, and is built from it plus the fan maps:
+
+- **Maps with open ground** (Customs, Woods, Shoreline, Lighthouse, Interchange, Reserve): the real ground from the dump's terrain, painted with the fan map's forest, pavement, roads, dirt roads and rail (painted into the ground itself, so nothing flickers), the fan map's water at one level per body, rocks and fences. Buildings come from the walk map (inside a fan-map building outline, under a roof or ceiling, or below ground), with walls traced along their edges like the indoor maps, and the ground pushed down under their floors. Fan-map buildings stay as blocks only where the walk map has no floor inside them. Built by `tools/build_blockouts.py --dumps` then `tools/build_dump_assets.py --svg`.
+- **Indoor and city maps** (Factory, Labs, Ground Zero): a floor plan from the walk map: dark floors where you can walk, light walls along every walkable edge (2.4 m on every level, never across a doorway), railings at drops, furniture outlines. Roofs, ceilings and unreachable rooftops are left out.
+- **2D map** (Show on map): paints the tarkov.dev fan map onto the ground and floors, matching the floor you're viewing. The SVGs are in `maps/svg` with their licence. The Labs fan map isn't drawn to scale, so it sits up to 1-1.5 m off there.
+
+Place names come from tarkov.dev. Loot spots more than 15 m from the walk map (Factory has 111 leftover spots about 200 m outside the building) are not drawn or counted.
 
 ## How the odds work
 
@@ -27,9 +33,9 @@ Each map is a rough "dev blockout": grey grid boxes like an unfinished Source ma
 | Container loot odds | Done |
 | Loose-loot data matched to our server's exact SPT 4.1.6 files | To do: run `kit/collect-server-loot.ps1`, send the zip |
 | Rough 3D blockouts, extracts, transits and place names, 10 maps | Done |
-| Real map layouts from the map dump (walls, floors, stairs, walk map) | Factory and Labs done; other maps need a dump each |
-| Container positions on the map | Factory and Labs done; others come with their dump |
-| Locked doors, My keys, key values, suggested keys, only-reachable loot | Factory and Labs done |
+| Maps built from the map dumps + fan maps | Done for every map except the Labyrinth (needs a dump) and Streets |
+| Container positions on the map | Done (every dumped map) |
+| Locked doors, My keys, key values, suggested keys, only-reachable loot | Done (every dumped map) |
 | Loot runs | To do |
 | **Streets of Tarkov** | **To do** (biggest map; done last) |
 

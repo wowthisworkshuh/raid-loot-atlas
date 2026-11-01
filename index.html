@@ -310,6 +310,7 @@ body { margin: 0; }
         <div class="toggles" id="toggles">
           <button class="chip" data-t="glow" aria-pressed="true" style="--c: var(--glow)"><i></i>Loose loot</button>
           <button class="chip" data-t="cont" aria-pressed="true" style="--c: var(--cont)"><i></i>Containers</button>
+          <button class="chip" data-t="ov" aria-pressed="false" style="--c: var(--fg)"><i></i>2D map</button>
           <button class="chip" data-t="pins" aria-pressed="true" style="--c: var(--glow)"><i></i>Hotspot pins</button>
           <button class="chip" data-t="names" aria-pressed="true" style="--c: var(--fg)"><i></i>Place names</button>
           <button class="chip" data-t="p" aria-pressed="true" style="--c: var(--exit-pmc)"><i></i>PMC extracts</button>
@@ -491,6 +492,7 @@ async function loadMap(id) {
   loadModel(id);
   loadContainers(id);
   loadReach(id);
+  updateOverlay();
   $("loading").hidden = true;
   refresh();
 }
@@ -574,7 +576,8 @@ const DEV = {
   propSide: [0.46, 0.40, 0.32], propTop: [0.60, 0.53, 0.43], wood: [0.40, 0.33, 0.25], fence: [0.62, 0.64, 0.66], under: [0.45, 0.48, 0.50],
 };
 const devClip = { value: 1e4 };
-const devUniforms = { uYMax: devClip, uFog: { value: 0.0006 }, uFogColor: { value: new THREE.Color(0x0b0f12) }, uLight: { value: new THREE.Vector3(-0.45, 0.8, 0.35).normalize() } };
+const devUniforms = { uOv: { value: null }, uOvOn: { value: 0 }, uOvB: { value: new THREE.Vector4(0, 0, 1, 1) }, uOvMode: { value: 0 }, uAxis: { value: new THREE.Vector2(-1, 1) },
+  uYMax: devClip, uFog: { value: 0.0006 }, uFogColor: { value: new THREE.Color(0x0b0f12) }, uLight: { value: new THREE.Vector3(-0.45, 0.8, 0.35).normalize() } };
 const devMat = new THREE.ShaderMaterial({
   uniforms: devUniforms, side: THREE.DoubleSide, vertexColors: true,
   polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, // edges draw on top of the faces they outline
@@ -587,6 +590,7 @@ const devMat = new THREE.ShaderMaterial({
     }`,
   fragmentShader: `#include <logdepthbuf_pars_fragment>
     uniform float uYMax; uniform float uFog; uniform vec3 uFogColor; uniform vec3 uLight;
+    uniform sampler2D uOv; uniform float uOvOn; uniform vec4 uOvB; uniform float uOvMode; uniform vec2 uAxis;
     varying vec3 vW; varying vec3 vN; varying vec3 vC; varying float vG; varying float vClip; varying float vD;
     float line(vec2 uv, float s){ vec2 g = uv / s; vec2 w = fwidth(g); vec2 c = abs(fract(g - 0.5) - 0.5) / max(w, 1e-4);
       float l = 1.0 - min(min(c.x, c.y), 1.0); return l * (1.0 - smoothstep(0.15, 0.5, max(w.x, w.y))); }
@@ -597,6 +601,15 @@ const devMat = new THREE.ShaderMaterial({
       float g = vG * (0.10 * line(uv, 1.0) + 0.22 * line(uv, 4.0));
       float lit = 0.62 + 0.38 * max(dot(n, uLight), 0.0) + 0.08 * n.y;
       vec3 col = vC * lit * (1.0 - g);
+      // 2D map overlay: the fan map painted from above onto ground, floors and roofs (not walls)
+      if (uOvOn > 0.0 && vG > 0.5 && n.y > 0.5) {
+        vec2 ab = (vec2(vW.x * uAxis.x, vW.z * uAxis.y) - uOvB.xy) / uOvB.zw;
+        vec2 st = uOvMode < 0.5 ? ab : (uOvMode < 1.5 ? vec2(1.0 - ab.y, ab.x) : vec2(ab.y, 1.0 - ab.x));
+        if (st.x >= 0.0 && st.y >= 0.0 && st.x <= 1.0 && st.y <= 1.0) {
+          vec4 tx = texture2D(uOv, vec2(st.x, 1.0 - st.y));
+          col = mix(col, tx.rgb * (0.8 + 0.2 * lit) * (1.0 - 0.5 * g), tx.a * uOvOn);
+        }
+      }
       float f = 1.0 - exp(-pow(vD * uFog, 2.0));
       gl_FragColor = vec4(mix(col, uFogColor, f), 1.0);
       #include <logdepthbuf_fragment>
@@ -655,8 +668,9 @@ function buildBlockout(B) {
   const G = B.ground;
   const hAt = (x, z) => {
     if (!G) return 0;
-    const fx = Math.min(Math.max((x - G.x0) / G.dx, 0), G.n - 1.001), fz = Math.min(Math.max((z - G.z0) / G.dz, 0), G.n - 1.001);
-    const i = Math.floor(fz), j = Math.floor(fx), u = fz - i, v = fx - j, h = G.h, n = G.n;
+    const nx = G.nx || G.n, nz = G.nz || G.n;
+    const fx = Math.min(Math.max((x - G.x0) / G.dx, 0), nx - 1.001), fz = Math.min(Math.max((z - G.z0) / G.dz, 0), nz - 1.001);
+    const i = Math.floor(fz), j = Math.floor(fx), u = fz - i, v = fx - j, h = G.h, n = nx;
     return h[i * n + j] * (1 - u) * (1 - v) + h[(i + 1) * n + j] * u * (1 - v) + h[i * n + j + 1] * (1 - u) * v + h[(i + 1) * n + j + 1] * u * v;
   };
   const ringOf = (r) => { const out = []; for (let i = 0; i < r.length; i += 2) out.push([r[i], r[i + 1]]); return out; };
@@ -677,7 +691,9 @@ function buildBlockout(B) {
     A.tri(P(a[0], hAt(...a) + off, a[1]), P(b[0], hAt(...b) + off, b[1]), P(c[0], hAt(...c) + off, c[1]), col, grid, clip);
   };
 
-  if (G) { // terrain grid
+  if (G && G.kind) { // the real ground (map dump), coloured by the fan map's ground kinds; one indexed mesh
+    A.extra = terrainMesh(G);
+  } else if (G) { // terrain grid
     const n = G.n, col = DEV.ground;
     for (let i = 0; i < n - 1; i++) for (let j = 0; j < n - 1; j++) {
       const x0 = G.x0 + j * G.dx, x1 = x0 + G.dx, z0 = G.z0 + i * G.dz, z1 = z0 + G.dz;
@@ -722,7 +738,11 @@ function buildBlockout(B) {
         }
       }
     } else if (it.t === "fence") {
-      const pts = ringOf(it.p);
+      const pts0 = ringOf(it.p), pts = [pts0[0]];
+      for (let i = 0; i < pts0.length - 1; i++) { // follow the ground: split long runs at the ground grid
+        const [sx, sz] = pts0[i], [ex, ez] = pts0[i + 1], k = it.b != null ? 1 : Math.max(1, Math.ceil(Math.hypot(ex - sx, ez - sz) / cell));
+        for (let q = 1; q <= k; q++) pts.push([sx + (ex - sx) * q / k, sz + (ez - sz) * q / k]);
+      }
       for (let i = 0; i < pts.length - 1; i++) {
         const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
         const a0 = it.b ?? hAt(ax, az), b0 = it.b ?? hAt(bx, bz);
@@ -732,7 +752,37 @@ function buildBlockout(B) {
       }
     }
   }
-  return A.mesh();
+  const grp = A.mesh(); if (A.extra) grp.add(A.extra);
+  return grp;
+}
+// ground, forest, pavement, road, dirt road, rail, wood, under water: muted but clearly apart from the blue-grey building floors
+const GROUND_KIND = [[0.38, 0.40, 0.33], [0.24, 0.33, 0.24], [0.56, 0.57, 0.57], [0.31, 0.32, 0.33], [0.47, 0.40, 0.30], [0.40, 0.30, 0.25], [0.48, 0.39, 0.28], [0.24, 0.29, 0.31]];
+function terrainMesh(G) {
+  const nx = G.nx, nz = G.nz, n = nx * nz;
+  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), idx = new Uint32Array((nx - 1) * (nz - 1) * 6);
+  for (let i = 0; i < nz; i++) for (let j = 0; j < nx; j++) {
+    const k = i * nx + j, [wx, , wz] = toWorld(G.x0 + j * G.dx, 0, G.z0 + i * G.dz);
+    pos[k * 3] = wx; pos[k * 3 + 1] = G.h[k]; pos[k * 3 + 2] = wz;
+    const c = GROUND_KIND[G.kind[k]] || GROUND_KIND[0]; col.set(c, k * 3);
+  }
+  let o = 0;
+  for (let i = 0; i < nz - 1; i++) for (let j = 0; j < nx - 1; j++) {
+    const a = i * nx + j, b = a + 1, c = a + nx, d = c + 1;
+    idx[o++] = a; idx[o++] = c; idx[o++] = b; idx[o++] = b; idx[o++] = c; idx[o++] = d;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  g.setAttribute("aGrid", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1));
+  g.setAttribute("aClip", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1));
+  g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeVertexNormals();
+  return new THREE.Mesh(g, devMat);
+}
+function parseTerrain(buf) {
+  const dv = new DataView(buf), nx = dv.getInt32(4, true), nz = dv.getInt32(8, true);
+  const f = new Float32Array(buf.slice(12, 36)), [x0, z0, dx, dz, hmin, step] = f;
+  const q = new Uint16Array(buf.slice(36, 36 + nx * nz * 2)), h = new Float32Array(nx * nz);
+  for (let i = 0; i < h.length; i++) h[i] = hmin + q[i] * step;
+  return { x0, z0, dx, dz, nx, nz, n: nx, h, kind: new Uint8Array(buf, 36 + nx * nz * 2, nx * nz) };
 }
 
 async function loadBlockout(id) {
@@ -745,11 +795,17 @@ async function loadBlockout(id) {
       blockCache[bid] = await r.json();
       blockCache[bid].geo = g && g.ok ? await g.arrayBuffer() : null;
       blockCache[bid].dump = d && d.ok ? await d.json() : null;
+      if (blockCache[bid].terrain) {
+        const t = await fetch(`maps/${blockCache[bid].terrain}`);
+        if (t.ok) blockCache[bid].ground = parseTerrain(await t.arrayBuffer());
+      }
     }
     if (map.id !== id) return;
     if (blockRoot) { scene.remove(blockRoot); blockRoot.traverse((o) => o.geometry?.dispose()); }
     const B = blockCache[bid];
-    blockRoot = B.geo ? buildGeo(B.geo) : buildBlockout(B);
+    // maps with real terrain: fan-map ground layers + the dump's buildings together; indoor maps: the dump alone
+    if (B.geo && B.combo) { blockRoot = new THREE.Group(); blockRoot.add(buildBlockout(B), buildGeo(B.geo)); }
+    else blockRoot = B.geo ? buildGeo(B.geo) : buildBlockout(B);
     blockRoot.userData.axis = { ...AXIS };
     scene.add(blockRoot);
     // the game's own exits (dump) when we have them; place names always from tarkov.dev
@@ -760,7 +816,7 @@ async function loadBlockout(id) {
       const box = new THREE.Box3().setFromObject(blockRoot.children[0]);
       if (!box.isEmpty()) frame(box);
     }
-    hud(id, B.geo ? "dump" : "blockout");
+    hud(id, B.geo ? (B.combo ? "combo" : "dump") : "blockout");
   } catch (e) { console.error(e); grid.visible = true; hud(id, "missing"); }
 }
 
@@ -864,7 +920,7 @@ function buildDoors(dump) {
   const pos = [], col = [];
   const corners = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
   const faces = [[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]];
-  const mpos = [], mcol = [];
+  const mpos = [], mcol = [], mbase = [];
   for (const d of doorList) {
     // the dumped bounds are often just the handle; draw a door-sized slab across the wider axis
     const wide = d.s[0] >= d.s[2] ? 0 : 2, w = Math.max(1.1, d.s[wide]) / 2, base = d.c[1] - Math.min(1.0, d.s[1] / 2 + 0.6);
@@ -872,20 +928,23 @@ function buildDoors(dump) {
     const cy = base + 1.1;
     const c = corners.map(([a, b, e]) => toWorld(d.c[0] + a * h[0], cy + b * h[1], d.c[2] + e * h[2]));
     for (const f of faces) for (const k of [f[0], f[1], f[2], f[0], f[2], f[3]]) pos.push(...c[k]);
-    if (d.state === "Locked" && d.key) { mpos.push(...toWorld(d.c[0], base + 2.8, d.c[2])); mcol.push(0, 0, 0); }
+    if (d.state === "Locked" && d.key) { mpos.push(...toWorld(d.c[0], base + 2.8, d.c[2])); mcol.push(0, 0, 0); mbase.push(base + 0.3); }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(pos.length), 3));
   g.computeVertexNormals();
-  doorMesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x111111 }));
+  // same material as walls, so a floor view cuts doors above the floor too
+  g.setAttribute("aGrid", new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3), 1));
+  g.setAttribute("aClip", new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3).fill(1), 1));
+  doorMesh = new THREE.Mesh(g, devMat);
   doorMesh.renderOrder = 1; scene.add(doorMesh);
   if (mpos.length) {
     const mg = new THREE.BufferGeometry();
     mg.setAttribute("position", new THREE.Float32BufferAttribute(mpos, 3));
     mg.setAttribute("color", new THREE.Float32BufferAttribute(mcol, 3));
-    mg.setAttribute("aOn", new THREE.Float32BufferAttribute(new Float32Array(mpos.length / 3).fill(1), 1));
-    doorMarks = new THREE.Points(mg, exitDotMat); doorMarks.renderOrder = 5; doorMesh.add(doorMarks);
+    mg.setAttribute("aBaseY", new THREE.Float32BufferAttribute(mbase, 1));
+    doorMarks = new THREE.Points(mg, doorDotMat); doorMarks.renderOrder = 5; doorMesh.add(doorMarks);
   }
   colorDoors();
 }
@@ -1012,7 +1071,7 @@ $("reach-only").addEventListener("click", () => {
 });
 
 // ---------- extracts + place names ----------
-const SHOW = { glow: true, cont: true, pins: true, names: true, p: true, s: true, t: true };
+const SHOW = { glow: true, cont: true, ov: false, pins: true, names: true, p: true, s: true, t: true };
 try { Object.assign(SHOW, JSON.parse(localStorage.getItem("atlas-show") || "{}")); } catch {}
 let marks = [], beams = null, exitDots = null;
 // pillars and dots hide with the toggles and with the floor slice (by the extract's own height)
@@ -1033,6 +1092,14 @@ const exitDotMat = new THREE.ShaderMaterial({
   fragmentShader: `varying vec3 vC; varying float vShow;
     void main(){ if (vShow < 0.5) discard; float d = length(gl_PointCoord - 0.5) * 2.0; if (d > 1.0) discard;
       vec3 c = d > 0.62 ? vec3(0.04, 0.05, 0.06) : vC; gl_FragColor = vec4(c, 1.0); }`,
+});
+// door markers: shown only when the door's own floor is inside the floor view / height range
+const doorDotMat = new THREE.ShaderMaterial({
+  uniforms, transparent: true, depthWrite: false, depthTest: false,
+  vertexShader: `attribute vec3 color; attribute float aBaseY; varying vec3 vC; varying float vShow; uniform float uYMin, uYMax;
+    void main(){ vC = color; vShow = step(uYMin - 0.5, aBaseY) * step(aBaseY, uYMax);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_PointSize = vShow * 11.0; }`,
+  fragmentShader: exitDotMat.fragmentShader,
 });
 const EXIT_STYLE = { p: ["PMC", "--exit-pmc", 0x74c69d], s: ["Scav", "--exit-scav", 0xb79cff], a: ["PMC + Scav", "--exit-any", 0xe8ecef], "-": ["Exit", "--exit-any", 0xe8ecef], t: ["Transit", "--transit", 0x7fd1e0] };
 function buildMarks(B) {
@@ -1090,6 +1157,7 @@ $("toggles").addEventListener("click", (e) => {
   try { localStorage.setItem("atlas-show", JSON.stringify(SHOW)); } catch {}
   applyToggles();
   if (b.dataset.t === "cont") refresh(); // the stats count containers only while they're shown
+  if (b.dataset.t === "ov") updateOverlay();
 });
 function clearMarks() {
   $("marks").innerHTML = ""; marks = [];
@@ -1121,7 +1189,8 @@ function hud(id, state) {
   const model = { ok: "", checking: "", loading: `<span class="badge">Loading map model</span>`,
     missing: `<span class="badge warn">No map model yet · showing spawn points only</span>`,
     blockout: `<span class="badge">Rough blockout · outlines from tarkov.dev</span>`,
-    dump: `<span class="badge">Floor plan from the game's walk map · names from tarkov.dev</span>` }[state];
+    dump: `<span class="badge">Floor plan from the game's walk map · names from tarkov.dev</span>`,
+    combo: `<span class="badge">Ground and buildings from the game · roads, water, names from tarkov.dev</span>` }[state];
   $("hud").innerHTML = `<span class="badge"><strong>${esc(name)}</strong> · <span id="spotcount">${map ? (map.points.length - (map.offCount || 0)).toLocaleString() : ""}</span> loose-loot spots</span>${model}`;
 }
 
@@ -1284,6 +1353,53 @@ function pickFloor(i) {
     applySlice(Math.max(lo, map.ymin - 1), Math.min(hi, map.ymax + 1));
   }
   computeHotspots();
+  updateOverlay();
+}
+
+// ---------- 2D map overlay (tarkov.dev SVG maps, CC BY-NC-SA 4.0) ----------
+// bounds and orientation as in tools/build_blockouts.py; mode 0 "s,t", 1 "t,1-s", 2 "1-t,s".
+// floors: the SVG layer for each floor button; outdoor maps keep the ground layer under an upper floor.
+const OV = {
+  bigmap: { svg: "Customs", b: [[698, -307], [-372, 237]], m: 0, base: "Ground_Level", all: ["Ground_Level", "Underground_Level", "First_Floor", "Second_Floor", "Third_Floor"] },
+  woods: { svg: "Woods", b: [[646, -914], [-761, 442]], m: 0, base: "Ground_Level", all: ["Ground_Level"] },
+  shoreline: { svg: "Shoreline", b: [[504, -415], [-1056, 618]], m: 0, base: "Ground_Level", all: ["Ground_Level", "Underground_Level", "First_Floor", "Second_Floor", "Third_Floor"] },
+  lighthouse: { svg: "Lighthouse", b: [[515, -998], [-545, 725]], m: 0, base: "Ground_Level", all: ["Ground_Level"] },
+  interchange: { svg: "Interchange", b: [[598, -442], [-433, 426]], m: 0, base: "Ground_Level", all: ["Ground_Level", "First_Floor", "Second_Floor"],
+    floors: ["Ground_Level", "First_Floor", "Second_Floor"], keepBase: true },
+  rezervbase: { svg: "Reserve", b: [[289, -274], [-303, 272]], m: 0, base: "Ground_Level", all: ["Ground_Level", "Bunkers"],
+    floors: ["Bunkers", "Ground_Level", "Ground_Level"] },
+  sandbox: { svg: "GroundZero", b: [[249, -124], [-99, 364]], m: 0, base: "Ground_Level", all: ["Ground_Level", "Underground_Level", "First_Floor", "Second_Floor", "Third_Floor"],
+    floors: ["Underground_Level", "Ground_Level", "First_Floor", "Second_Floor"], keepBase: true },
+  factory4_day: { svg: "Factory", b: [[77, -64.5], [-65.5, 67.4]], m: 1, shift: [0.5, 0.75], base: "Ground_Floor", all: ["Basement", "Ground_Floor", "Second_Floor", "Third_Floor"],
+    floors: ["Basement", "Ground_Floor", "Second_Floor", "Third_Floor"] },
+  laboratory: { svg: "Labs", b: [[-93.5, -474], [-297, -184]], m: 2, base: "First_Level", all: ["Technical_Level", "First_Level", "Second_Level"],
+    floors: ["Technical_Level", "First_Level", "Second_Level"] },
+};
+const ovSvg = {}, ovTex = {};
+async function updateOverlay() {
+  const cfg = map && OV[MODEL_OF[map.id] || map.id];
+  if (!SHOW.ov || !cfg) { devUniforms.uOvOn.value = 0; return; }
+  const want = floorSel >= 0 && cfg.floors ? [...new Set([cfg.floors[floorSel], ...(cfg.keepBase ? [cfg.base] : [])])] : [cfg.base];
+  const key = cfg.svg + "|" + want.join(",");
+  try {
+    if (!ovTex[key]) {
+      ovSvg[cfg.svg] ||= await (await fetch(`maps/svg/${cfg.svg}.svg`)).text();
+      const doc = new DOMParser().parseFromString(ovSvg[cfg.svg], "image/svg+xml"), root = doc.documentElement;
+      for (const id of cfg.all) { const g = doc.getElementById(id); if (g && !want.includes(id)) g.setAttribute("style", "display:none"); }
+      const vb = root.getAttribute("viewBox").split(/[ ,]+/).map(Number);
+      let w = 4096, h = Math.round(w * vb[3] / vb[2]); if (h > 4096) { h = 4096; w = Math.round(h * vb[2] / vb[3]); }
+      root.setAttribute("width", w); root.setAttribute("height", h);
+      const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(doc)], { type: "image/svg+xml" }));
+      const img = new Image(); img.src = url; await img.decode();
+      const cv = document.createElement("canvas"); cv.width = w; cv.height = h; cv.getContext("2d").drawImage(img, 0, 0, w, h); URL.revokeObjectURL(url);
+      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.NoColorSpace; t.anisotropy = 8; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
+      ovTex[key] = t;
+    }
+    if (!SHOW.ov || OV[MODEL_OF[map.id] || map.id] !== cfg) return;
+    const [[x1, z1], [x2, z2]] = cfg.b, sh = cfg.shift || [0, 0];
+    devUniforms.uOv.value = ovTex[key]; devUniforms.uOvB.value.set(x1 + sh[0], z1 + sh[1], x2 - x1, z2 - z1);
+    devUniforms.uOvMode.value = cfg.m; devUniforms.uAxis.value.set(AXIS.x, AXIS.z); devUniforms.uOvOn.value = 0.88;
+  } catch (e) { console.error(e); devUniforms.uOvOn.value = 0; }
 }
 
 // ---------- floor slice ----------
