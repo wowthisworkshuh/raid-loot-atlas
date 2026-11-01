@@ -5,7 +5,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>SurvivalPack.MapDump</AssemblyName>
     <RootNamespace>SurvivalPack.MapDump</RootNamespace>
-    <Version>0.2.1</Version>
+    <Version>0.2.2</Version>
     <Nullable>disable</Nullable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>

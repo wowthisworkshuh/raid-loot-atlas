@@ -6,6 +6,9 @@
 //   colliders.bin    building layouts: every solid box collider (centre, size, rotation) and the triangles
 //                    of every mesh collider the game keeps readable; layers.json names their layers
 //   terrain.bin      the real ground: each terrain's height grid (downsampled to at most 513 x 513)
+//   links.json       how bots get between separate bits of the walk map: Unity off-mesh links and every
+//                    component whose type name has "Link" or "NavMesh" in it (EFT's door links, jumps,
+//                    ladders), with every position, transform and scalar on it
 //   meta.json        map id, game and plugin versions, counts
 // Output: <SPT>/BepInEx/survivalpack-mapdump/<mapId>/. Nothing in the raid is changed.
 //
@@ -27,7 +30,7 @@ using UnityEngine.SceneManagement;
 
 namespace SurvivalPack.MapDump
 {
-    [BepInPlugin("com.survivalpack.mapdump", "SurvivalPack.MapDump", "0.2.1")]
+    [BepInPlugin("com.survivalpack.mapdump", "SurvivalPack.MapDump", "0.2.2")]
     public class Plugin : BaseUnityPlugin
     {
         ConfigEntry<KeyboardShortcut> _key;
@@ -43,7 +46,7 @@ namespace SurvivalPack.MapDump
             _key = Config.Bind("Dump", "Dump now", new KeyboardShortcut(KeyCode.F10, KeyCode.LeftControl), "Write this map's data now (in raid).");
             _auto = Config.Bind("Dump", "Dump automatically", true, "Write each map's data once per game session, a little after the raid loads.");
             _autoDelay = Config.Bind("Dump", "Seconds after load", 20f, "Wait this long after the raid world appears, so every door and container has loaded.");
-            Logger.LogInfo("SurvivalPack.MapDump 0.2.1 ready (Ctrl+F10 in raid)");
+            Logger.LogInfo("SurvivalPack.MapDump 0.2.2 ready (Ctrl+F10 in raid)");
         }
 
         UnityEngine.Object _world;
@@ -100,15 +103,16 @@ namespace SurvivalPack.MapDump
                 int transits = DumpObjects(Path.Combine(dir, "transits.json"), "EFT.Interactive.TransitPoint", Generic);
                 var (boxes, meshes, meshTris, unreadable) = DumpColliders(Path.Combine(dir, "colliders.bin"), Path.Combine(dir, "layers.json"));
                 int terrains = DumpTerrain(Path.Combine(dir, "terrain.bin"));
+                int links = DumpLinks(Path.Combine(dir, "links.json"));
                 var meta = new StringBuilder("{");
                 Prop(meta, "map", map); meta.Append(',');
-                Prop(meta, "plugin", "0.2.1"); meta.Append(',');
+                Prop(meta, "plugin", "0.2.2"); meta.Append(',');
                 Prop(meta, "unity", Application.unityVersion); meta.Append(',');
                 Prop(meta, "game", Application.version); meta.Append(',');
                 Prop(meta, "scenes", string.Join(";", Enumerable.Range(0, SceneManager.sceneCount).Select(i => SceneManager.GetSceneAt(i).name))); meta.Append(',');
                 Prop(meta, "time", DateTime.UtcNow.ToString("o")); meta.Append(',');
                 meta.Append($"\"navmeshTriangles\":{tris},\"doors\":{doors},\"containers\":{conts},\"exits\":{exits},\"transits\":{transits},");
-                meta.Append($"\"boxColliders\":{boxes},\"meshColliders\":{meshes},\"meshColliderTriangles\":{meshTris},\"unreadableMeshColliders\":{unreadable},\"terrains\":{terrains}}}");
+                meta.Append($"\"boxColliders\":{boxes},\"meshColliders\":{meshes},\"meshColliderTriangles\":{meshTris},\"unreadableMeshColliders\":{unreadable},\"terrains\":{terrains},\"links\":{links}}}");
                 File.WriteAllText(Path.Combine(dir, "meta.json"), meta.ToString());
                 if (tris == 0)
                 {
@@ -220,6 +224,95 @@ namespace SurvivalPack.MapDump
                 }
             }
             return terrains.Length;
+        }
+
+        // ---------- bot links ----------
+        int DumpLinks(string path)
+        {
+            var sb = new StringBuilder("[\n");
+            int n = 0;
+            var counts = new Dictionary<string, int>();
+            foreach (var o in Resources.FindObjectsOfTypeAll(typeof(Behaviour)))
+            {
+                var b = o as Behaviour;
+                if (b == null || !b.gameObject.scene.IsValid()) continue;
+                var tn = b.GetType().Name;
+                bool link = b is OffMeshLink || tn.IndexOf("Link", StringComparison.OrdinalIgnoreCase) >= 0
+                            || (tn.IndexOf("NavMesh", StringComparison.OrdinalIgnoreCase) >= 0 && !(b is NavMeshAgent));
+                if (!link) continue;
+                counts[b.GetType().FullName] = counts.TryGetValue(b.GetType().FullName, out var k) ? k + 1 : 1;
+                if (n > 0) sb.Append(",\n");
+                sb.Append('{');
+                Prop(sb, "type", b.GetType().FullName); sb.Append(',');
+                Prop(sb, "name", b.gameObject.name); sb.Append(',');
+                Prop(sb, "active", b.isActiveAndEnabled); sb.Append(',');
+                Vec(sb, "pos", b.transform.position); sb.Append(',');
+                Vec(sb, "rot", b.transform.eulerAngles);
+                if (b is OffMeshLink ol)
+                {
+                    if (ol.startTransform != null) { sb.Append(','); Vec(sb, "start", ol.startTransform.position); }
+                    if (ol.endTransform != null) { sb.Append(','); Vec(sb, "end", ol.endTransform.position); }
+                    sb.Append(','); Prop(sb, "bidirectional", ol.biDirectional);
+                    sb.Append(','); Prop(sb, "linkActivated", ol.activated);
+                }
+                sb.Append(",\"members\":{");
+                bool first = true;
+                foreach (var (name, value) in LinkMembers(b))
+                {
+                    if (!first) sb.Append(',');
+                    first = false;
+                    switch (value)
+                    {
+                        case Vector3 v: Vec(sb, name, v); break;
+                        case Transform t: Vec(sb, name + "@world", t.position); break;
+                        case Component c: Prop(sb, name + "@object", c.gameObject.name + " (" + c.GetType().Name + ")"); break;
+                        default: Prop(sb, name, Str(value)); break;
+                    }
+                }
+                sb.Append("}}");
+                n++;
+            }
+            sb.Append("\n]\n");
+            File.WriteAllText(path, sb.ToString());
+            Logger.LogInfo("links: " + string.Join(", ", counts.Select(kv => kv.Key + " x" + kv.Value)));
+            return n;
+        }
+
+        // positions, transforms, other components (by name) and scalars, plus Vector3s inside arrays/lists
+        static IEnumerable<(string, object)> LinkMembers(object o)
+        {
+            const BindingFlags F = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            var seen = new HashSet<string>();
+            for (var tt = o.GetType(); tt != null && tt != typeof(MonoBehaviour) && tt != typeof(Behaviour) && tt != typeof(object); tt = tt.BaseType)
+            {
+                foreach (var f in tt.GetFields(F))
+                {
+                    if (!seen.Add(f.Name)) continue;
+                    object v; try { v = f.GetValue(o); } catch { continue; }
+                    if (v == null) continue;
+                    if (v is Vector3 || v is Transform || v is string || v.GetType().IsEnum || v.GetType().IsPrimitive) { yield return (f.Name, v); continue; }
+                    if (v is Component) { yield return (f.Name, v); continue; }
+                    if (v is IEnumerable list && !(v is string))
+                    {
+                        int i = 0;
+                        foreach (var item in list)
+                        {
+                            if (i >= 16) break;
+                            if (item is Vector3 || item is Transform) yield return (f.Name + "[" + i + "]", item);
+                            else if (item is Component) yield return (f.Name + "[" + i + "]", item);
+                            i++;
+                        }
+                    }
+                }
+                foreach (var p in tt.GetProperties(F))
+                {
+                    if (p.GetIndexParameters().Length > 0 || !p.CanRead || !seen.Add(p.Name)) continue;
+                    var pt = p.PropertyType;
+                    if (!(pt == typeof(Vector3) || pt == typeof(string) || pt.IsEnum || pt.IsPrimitive)) continue;
+                    object v; try { v = p.GetValue(o); } catch { continue; }
+                    if (v != null) yield return (p.Name, v);
+                }
+            }
         }
 
         // ---------- objects ----------
