@@ -30,6 +30,9 @@
   --exit-scav: #b79cff;   /* Scav extract */
   --exit-any: #e8ecef;    /* both sides */
   --transit: #7fd1e0;     /* transit to another map */
+  --door-need: #e5484d;   /* locked, no key */
+  --door-ok: #46c27a;     /* locked, you have the key */
+  --door-breach: #e8a33d; /* can be breached */
   --font-display: "Chakra Petch", "Bahnschrift", "DIN Alternate", "Arial Narrow", sans-serif;
   --font-body: "Barlow", "Segoe UI", system-ui, sans-serif;
 }
@@ -176,6 +179,19 @@ select { width: 100%; background: var(--raise); border: 1px solid var(--line); b
 .floors button small { font-family: var(--font-body); font-weight: 500; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--faint); font-variant-numeric: tabular-nums; }
 .floors button:hover { border-color: var(--faint); }
 .floors button[aria-pressed="true"] { border-color: var(--glow); color: var(--glow); }
+.keys { display: flex; flex-direction: column; gap: 4px; }
+.key {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: center; text-align: left; cursor: pointer;
+  background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 7px 9px; font-size: 12px;
+}
+.key i { width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--faint); display: grid; place-items: center; font-style: normal; font-size: 10px; }
+.key[aria-pressed="true"] { border-color: var(--door-ok); }
+.key[aria-pressed="true"] i { background: var(--door-ok); border-color: var(--door-ok); color: var(--bg); }
+.key .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.key .d { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 11px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; background: var(--c); }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-family: var(--font-display); letter-spacing: .12em; text-transform: uppercase; font-size: 13px; pointer-events: none; }
 
 @media (max-width: 1100px) {
@@ -256,6 +272,12 @@ body { margin: 0; }
         <p class="label">Map</p>
         <div class="maps" id="maps"></div>
         <div class="variants" id="variants" hidden></div>
+      </section>
+
+      <section id="keys-sec" hidden>
+        <p class="label">My keys</p>
+        <div class="keys" id="keys"></div>
+        <p class="note" id="keys-note"></p>
       </section>
 
       <section id="floors-sec" hidden>
@@ -483,7 +505,7 @@ function frame(given) {
 async function loadModel(id) {
   if (modelRoot) { scene.remove(modelRoot); modelRoot = null; }
   if (blockRoot) { scene.remove(blockRoot); blockRoot.traverse((o) => o.geometry?.dispose()); blockRoot = null; }
-  grid.visible = true; clearMarks();
+  grid.visible = true; clearMarks(); buildDoors(null);
   hud(id, "checking");
   try {
     const mid = MODEL_OF[id] || id;
@@ -518,9 +540,10 @@ const DEV = {
   ground: [0.30, 0.32, 0.33], bld: [0.56, 0.58, 0.60], roof: [0.70, 0.72, 0.73], slab: [0.62, 0.64, 0.65],
   wall: [0.50, 0.53, 0.55], room: [0.52, 0.55, 0.57], prop: [0.60, 0.56, 0.50], rock: [0.40, 0.39, 0.36],
   water: [0.16, 0.25, 0.31], road: [0.22, 0.23, 0.24], dirt: [0.34, 0.30, 0.25], rail: [0.30, 0.24, 0.21],
-  pave: [0.42, 0.44, 0.46], veg: [0.21, 0.27, 0.23], wood: [0.40, 0.33, 0.25], fence: [0.62, 0.64, 0.66], under: [0.45, 0.48, 0.50],
+  pave: [0.42, 0.44, 0.46], veg: [0.21, 0.27, 0.23], walk: [0.36, 0.40, 0.43], wood: [0.40, 0.33, 0.25], fence: [0.62, 0.64, 0.66], under: [0.45, 0.48, 0.50],
 };
-const devUniforms = { uYMax: uniforms.uYMax, uFog: { value: 0.0006 }, uFogColor: { value: new THREE.Color(0x0b0f12) }, uLight: { value: new THREE.Vector3(-0.45, 0.8, 0.35).normalize() } };
+const devClip = { value: 1e4 };
+const devUniforms = { uYMax: devClip, uFog: { value: 0.0006 }, uFogColor: { value: new THREE.Color(0x0b0f12) }, uLight: { value: new THREE.Vector3(-0.45, 0.8, 0.35).normalize() } };
 const devMat = new THREE.ShaderMaterial({
   uniforms: devUniforms, side: THREE.DoubleSide, vertexColors: true,
   polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, // edges draw on top of the faces they outline
@@ -677,24 +700,139 @@ async function loadBlockout(id) {
   const bid = MODEL_OF[id] || id;
   try {
     if (!blockCache[bid]) {
-      const r = await fetch(`maps/${bid}-blockout.json`);
+      const [r, g, d] = await Promise.all([
+        fetch(`maps/${bid}-blockout.json`), fetch(`maps/${bid}-geo.bin`).catch(() => null), fetch(`maps/${bid}-dump.json`).catch(() => null)]);
       if (!r.ok) throw new Error("no blockout");
       blockCache[bid] = await r.json();
+      blockCache[bid].geo = g && g.ok ? await g.arrayBuffer() : null;
+      blockCache[bid].dump = d && d.ok ? await d.json() : null;
     }
     if (map.id !== id) return;
     if (blockRoot) { scene.remove(blockRoot); blockRoot.traverse((o) => o.geometry?.dispose()); }
-    blockRoot = buildBlockout(blockCache[bid]);
+    const B = blockCache[bid];
+    blockRoot = B.geo ? buildGeo(B.geo) : buildBlockout(B);
     blockRoot.userData.axis = { ...AXIS };
     scene.add(blockRoot);
-    buildMarks(blockCache[bid]);
-    grid.visible = !blockCache[bid].ground;
-    if (!blockCache[bid].ground) { // indoor maps: frame the building, not stray spots outside it
+    // the game's own exits (dump) when we have them; place names always from tarkov.dev
+    buildMarks(B.dump ? { labels: B.labels, exits: B.dump.exits } : B);
+    buildDoors(B.dump);
+    grid.visible = !B.ground && !B.geo;
+    if (!B.ground) { // indoor maps: frame the building, not stray spots outside it
       const box = new THREE.Box3().setFromObject(blockRoot.children[0]);
       if (!box.isEmpty()) frame(box);
     }
-    hud(id, "blockout");
-  } catch { grid.visible = true; hud(id, "missing"); }
+    hud(id, B.geo ? "dump" : "blockout");
+  } catch (e) { console.error(e); grid.visible = true; hud(id, "missing"); }
 }
+
+// Model from the game's own data (MapDump): low-poly collision shapes as grey blocks, the walk map as floor.
+function buildGeo(buf) {
+  const dv = new DataView(buf);
+  const nb = dv.getInt32(4, true), nv = dv.getInt32(8, true), nt = dv.getInt32(12, true);
+  const boxes = new Float32Array(buf, 16, nb * 10);
+  const verts = new Float32Array(buf, 16 + nb * 40, nv * 3);
+  const tris = new Uint32Array(buf, 16 + nb * 40 + nv * 12, nt * 3);
+  const A = new Acc();
+  const P = (x, y, z) => { const [a, , b] = toWorld(x, 0, z); return [a, y, b]; };
+  const q = new THREE.Quaternion(), v = new THREE.Vector3();
+  const corners = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+  const faces = [[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]];
+  const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  for (let i = 0; i < nb; i++) {
+    const o = i * 10, sx = boxes[o + 3] / 2, sy = boxes[o + 4] / 2, sz = boxes[o + 5] / 2;
+    q.set(boxes[o + 6], boxes[o + 7], boxes[o + 8], boxes[o + 9]);
+    const c = corners.map(([a, b, d]) => { v.set(a * sx, b * sy, d * sz).applyQuaternion(q); return P(boxes[o] + v.x, boxes[o + 1] + v.y, boxes[o + 2] + v.z); });
+    const dims = [sx, sy, sz].map((h, k) => { v.set(k === 0, k === 1, k === 2).applyQuaternion(q); return [h, Math.abs(v.y)]; });
+    const thin = dims.reduce((m, d) => d[0] < m[0] ? d : m); // flat if its thinnest side points up
+    const flat = thin[1] > 0.8 && thin[0] < 0.4;
+    const col = flat ? DEV.slab : DEV.wall;
+    for (const f of faces) A.quad(c[f[0]], c[f[1]], c[f[2]], c[f[3]], f === faces[4] ? (flat ? DEV.slab : DEV.bld) : col, 1, 1);
+    if (Math.max(sx, sy, sz) > 0.8) for (const [a, b] of edges) A.edge(c[a], c[b]);
+  }
+  for (let i = 0; i < nt; i++) {
+    const a = tris[i * 3] * 3, b = tris[i * 3 + 1] * 3, c = tris[i * 3 + 2] * 3;
+    A.tri(P(verts[a], verts[a + 1] - 0.03, verts[a + 2]), P(verts[b], verts[b + 1] - 0.03, verts[b + 2]), P(verts[c], verts[c + 1] - 0.03, verts[c + 2]), DEV.walk, 1, 1);
+  }
+  return A.mesh();
+}
+
+// ---------- doors and keys ----------
+let doorMesh = null, doorList = [], doorMarks = null;
+let MY_KEYS = new Set();
+try { MY_KEYS = new Set(JSON.parse(localStorage.getItem("atlas-keys") || "[]")); } catch {}
+const DOOR_COL = { need: 0xe5484d, ok: 0x46c27a, breach: 0xe8a33d, sealed: 0x5b6770, open: 0xa08a6a };
+function doorStatus(d) {
+  if (d.state !== "Locked") return "open";
+  if (d.key) return MY_KEYS.has(d.key) ? "ok" : "need";
+  return d.breach ? "breach" : "sealed";
+}
+function buildDoors(dump) {
+  if (doorMesh) { scene.remove(doorMesh); doorMesh.geometry.dispose(); doorMarks?.geometry.dispose(); doorMesh = null; doorMarks = null; }
+  doorList = (dump?.doors || []).filter((d) => d.t !== "trunk" || d.state === "Locked");
+  renderKeys(dump);
+  if (!doorList.length) return;
+  const pos = [], col = [];
+  const corners = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+  const faces = [[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]];
+  const mpos = [], mcol = [];
+  for (const d of doorList) {
+    // the dumped bounds are often just the handle; draw a door-sized slab across the wider axis
+    const wide = d.s[0] >= d.s[2] ? 0 : 2, w = Math.max(1.1, d.s[wide]) / 2, base = d.c[1] - Math.min(1.0, d.s[1] / 2 + 0.6);
+    const h = [0.14, 1.1, 0.14]; h[wide] = w;
+    const cy = base + 1.1;
+    const c = corners.map(([a, b, e]) => toWorld(d.c[0] + a * h[0], cy + b * h[1], d.c[2] + e * h[2]));
+    for (const f of faces) for (const k of [f[0], f[1], f[2], f[0], f[2], f[3]]) pos.push(...c[k]);
+    if (d.state === "Locked" && d.t !== "trunk") { mpos.push(...toWorld(d.c[0], base + 2.8, d.c[2])); mcol.push(0, 0, 0); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(pos.length), 3));
+  g.computeVertexNormals();
+  doorMesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x111111 }));
+  doorMesh.renderOrder = 1; scene.add(doorMesh);
+  if (mpos.length) {
+    const mg = new THREE.BufferGeometry();
+    mg.setAttribute("position", new THREE.Float32BufferAttribute(mpos, 3));
+    mg.setAttribute("color", new THREE.Float32BufferAttribute(mcol, 3));
+    mg.setAttribute("aOn", new THREE.Float32BufferAttribute(new Float32Array(mpos.length / 3).fill(1), 1));
+    doorMarks = new THREE.Points(mg, exitDotMat); doorMarks.renderOrder = 5; doorMesh.add(doorMarks);
+  }
+  colorDoors();
+}
+function colorDoors() {
+  if (!doorMesh) return;
+  const c = doorMesh.geometry.attributes.color, tmp = new THREE.Color();
+  doorList.forEach((d, i) => { tmp.set(DOOR_COL[doorStatus(d)]); for (let k = 0; k < 36; k++) c.setXYZ(i * 36 + k, tmp.r, tmp.g, tmp.b); });
+  c.needsUpdate = true;
+  if (doorMarks) {
+    const mc = doorMarks.geometry.attributes.color; let j = 0;
+    for (const d of doorList) if (d.state === "Locked" && d.t !== "trunk") { tmp.set(DOOR_COL[doorStatus(d)]); mc.setXYZ(j++, tmp.r, tmp.g, tmp.b); }
+    mc.needsUpdate = true;
+  }
+}
+function renderKeys(dump) {
+  const keys = new Map();
+  for (const d of dump?.doors || []) if (d.key && d.state === "Locked") {
+    const k = keys.get(d.key) || { name: d.keyName || d.key, price: d.keyPrice, doors: 0 };
+    k.doors++; keys.set(d.key, k);
+  }
+  $("keys-sec").hidden = !dump;
+  if (!dump) return;
+  $("keys").innerHTML = keys.size ? [...keys].sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, k]) =>
+    `<button class="key" data-k="${id}" aria-pressed="${MY_KEYS.has(id)}"><i>${MY_KEYS.has(id) ? "✓" : ""}</i><span class="n" title="${esc(k.name)}">${esc(k.name)}</span><span class="d">${k.doors} door${k.doors > 1 ? "s" : ""}</span></button>`).join("")
+    : `<p class="empty">No keyed doors on this map.</p>`;
+  const counts = { need: 0, ok: 0, breach: 0, sealed: 0 };
+  for (const d of doorList) { const s = doorStatus(d); if (s in counts) counts[s]++; }
+  $("keys-note").innerHTML = `<span class="legend">
+    <span style="--c: var(--door-need)"><i></i>No key (${counts.need})</span><span style="--c: var(--door-ok)"><i></i>Have key (${counts.ok})</span>
+    <span style="--c: var(--door-breach)"><i></i>Breachable (${counts.breach})</span><span style="--c: var(--faint)"><i></i>Sealed (${counts.sealed})</span></span>`;
+}
+$("keys").addEventListener("click", (e) => {
+  const b = e.target.closest(".key"); if (!b) return;
+  const k = b.dataset.k; MY_KEYS.has(k) ? MY_KEYS.delete(k) : MY_KEYS.add(k);
+  try { localStorage.setItem("atlas-keys", JSON.stringify([...MY_KEYS])); } catch {}
+  colorDoors(); renderKeys(blockCache[MODEL_OF[map.id] || map.id]?.dump);
+});
 
 // ---------- extracts + place names ----------
 const SHOW = { glow: true, pins: true, names: true, p: true, s: true, t: true };
@@ -804,7 +942,8 @@ function hud(id, state) {
   const name = map?.name || id;
   const model = { ok: "", checking: "", loading: `<span class="badge">Loading map model</span>`,
     missing: `<span class="badge warn">No map model yet · showing spawn points only</span>`,
-    blockout: `<span class="badge">Rough blockout · outlines from tarkov.dev</span>` }[state];
+    blockout: `<span class="badge">Rough blockout · outlines from tarkov.dev</span>`,
+    dump: `<span class="badge">Model from the game's own collision data</span>` }[state];
   $("hud").innerHTML = `<span class="badge"><strong>${esc(name)}</strong> · ${map ? map.points.length.toLocaleString() : ""} loose-loot spots</span>${model}`;
 }
 
@@ -981,6 +1120,7 @@ function applySlice(exactLo, exactHi) {
     if (lo > hi) { if (document.activeElement === $("ymin")) $("ymax").value = hi = lo; else $("ymin").value = lo = hi; }
   }
   uniforms.uYMin.value = lo - 0.01; uniforms.uYMax.value = hi + 0.01;
+  devClip.value = (exactLo != null ? hi - 0.6 : hi) + 0.01; // floor views cut just under the next floor's slab
   $("ymin-o").textContent = lo.toFixed(1) + " m"; $("ymax-o").textContent = hi.toFixed(1) + " m";
 }
 for (const id of ["ymin", "ymax"]) $(id).addEventListener("input", () => {
