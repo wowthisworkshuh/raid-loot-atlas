@@ -71,7 +71,7 @@ What it powers, once the dumps are in:
 
 `SurvivalPack.AtlasLink` is a small BepInEx plugin for your own game. While you play it answers on your PC only (`http://127.0.0.1:47320/raid`, read only) with the map you're on, your side, your spawn and where you are now. Nothing in the game is changed, and only the atlas site (or a page on your PC) can read it from a browser.
 
-1. Download `SurvivalPack.AtlasLink.dll` from the [AtlasLink release](https://github.com/wowthisworkshuh/raid-loot-atlas/releases) and put it in `<SPT>\BepInEx\plugins\SurvivalPack.AtlasLink\`. Each friend who wants it puts it in their own game.
+1. Get `SurvivalPack.AtlasLink.dll` and put it in `<SPT>\BepInEx\plugins\SurvivalPack.AtlasLink\`. Each friend who wants it puts it in their own game. There's no release yet; to build it yourself, install the [.NET SDK](https://dotnet.microsoft.com/download) and run `dotnet build kit\AtlasLink\SurvivalPack.AtlasLink.csproj -c Release -p:SptPath="C:\SPT"` (the DLL lands in `kit\AtlasLink\bin\Release\netstandard2.1\`).
 2. Open the atlas, switch to **Loot run** and press **Link to my game**. Chrome or Edge may ask to let the site reach devices on your network: allow it (the plugin only answers on this PC). Safari can't link.
 3. Start a raid. The atlas switches to that map and plans from your real spawn with your current settings. A pink arrow shows where you are and which way you face.
 4. Mid-raid, **Re-plan from where I am** starts a new route where you stand and skips places you've walked right past this raid.
