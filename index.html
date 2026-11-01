@@ -605,7 +605,7 @@ new ResizeObserver(resize).observe(stage);
 
 // ---------- data ----------
 // every push stamps BUILD, so browsers never mix a cached old file with a new one (Pages caches 10 min)
-const BUILD = "202611010305";
+const BUILD = "202611010317";
 { const f0 = window.fetch.bind(window);
   window.fetch = (u, o) => f0(typeof u === "string" && /^(data|maps)\//.test(u) ? u + (u.includes("?") ? "&" : "?") + "v=" + BUILD : u, o); }
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
@@ -1383,9 +1383,21 @@ async function loadContainers(id) {
     const list = await r.json();
     if (map.id !== id) return;
     contData = list.filter((c) => map.containers.ids[c.id]);
-    buildContainers(); refresh();
+    contExpected(); buildContainers(); refresh(); fillRunItems();
   } catch { /* no container file yet */ }
 }
+// items per raid from the placed containers (container spawn chance x item chance), so items that only
+// ever spawn in containers (most keys, many valuables) show up in searches and loot runs too
+function contExpected() {
+  const e = {};
+  for (const c of contData || []) { const [tpl, spawn] = map.containers.ids[c.id], o = map.containers.odds[tpl] || {};
+    for (const t in o) e[t] = (e[t] || 0) + spawn * o[t]; }
+  map.contExp = e; map.contN = {};
+  for (const c of contData || []) { const o = map.containers.odds[map.containers.ids[c.id][0]] || {}; for (const t in o) map.contN[t] = (map.contN[t] || 0) + 1; }
+}
+const useCont = () => SHOW.cont && !!contData && !!map.contExp;
+function expOf(tpl) { return (map.expected[tpl] || 0) + (useCont() ? map.contExp[tpl] || 0 : 0); }
+function knownItems() { const s = new Set(Object.keys(map.expected)); if (useCont()) for (const t in map.contExp) if (map.contExp[t] > 0) s.add(t); return [...s]; }
 function buildContainers() {
   if (contPts) { scene.remove(contPts); contPts.geometry.dispose(); }
   const pos = new Float32Array(contData.length * 3);
@@ -1409,8 +1421,8 @@ function hud(id, state) {
 function filterState() { return { q: $("q").value.trim().toLowerCase(), cat: $("cat").value, min: +$("price").value }; }
 function candidates() {
   const f = filterState(); const out = [];
-  for (const [tpl, e] of Object.entries(map.expected)) {
-    const m = ITEMS[tpl]; if (!m) continue;
+  for (const tpl of knownItems()) {
+    const m = ITEMS[tpl]; if (!m) continue; const e = expOf(tpl);
     if (f.q && !(m[0].toLowerCase().includes(f.q) || m[1].toLowerCase().includes(f.q))) continue;
     if (!inCat(tpl, f.cat)) continue;
     if (m[3] < f.min) continue;
@@ -1422,8 +1434,8 @@ function candidates() {
 
 function refresh() {
   const cand = candidates();
-  if (sel.tpl && !map.expected[sel.tpl]) sel.tpl = null;
-  const active = sel.tpl ? [[sel.tpl, map.expected[sel.tpl]]] : cand;
+  if (sel.tpl && !expOf(sel.tpl)) sel.tpl = null;
+  const active = sel.tpl ? [[sel.tpl, expOf(sel.tpl)]] : cand;
   const set = new Set(active.map((a) => a[0]));
   selSet = set;
   chanceAt = new Float32Array(map.points.length);
@@ -1458,9 +1470,10 @@ function refresh() {
 }
 
 function renderSelection(active, cand) {
-  const spots = chanceAt.reduce((n, v) => n + (v > 0 ? 1 : 0), 0);
-  const total = active.reduce((s, a) => s + a[1], 0) + (contChance ? contChance.reduce((a, b) => a + b, 0) : 0);
+  const spots = chanceAt.reduce((n, v) => n + (v > 0 ? 1 : 0), 0) + (contChance ? contChance.reduce((n, v) => n + (v > 0 ? 1 : 0), 0) : 0);
+  const total = active.reduce((s, a) => s + a[1], 0);
   let best = 0; for (const v of chanceAt) best = Math.max(best, v);
+  if (contChance) for (const v of contChance) best = Math.max(best, v);
   const f = filterState();
   let name, sub;
   if (sel.tpl) {
@@ -1469,7 +1482,7 @@ function renderSelection(active, cand) {
   } else {
     const catName = f.cat ? CATS[f.cat][0] : "All loot";
     name = `${catName}${f.min ? ` worth ${fmtRub(f.min)}+` : ""}${f.q ? ` matching “${esc($("q").value.trim())}”` : ""}`;
-    sub = `${cand.length.toLocaleString()} item types spawn loose on this map`;
+    sub = `${cand.length.toLocaleString()} item types spawn on this map`;
   }
   $("selection").innerHTML = `
     <div class="sel-head"><div><div class="sel-name">${esc(name)}</div><div class="sel-sub">${sub}</div></div>
@@ -1482,6 +1495,10 @@ function renderSelection(active, cand) {
   $("back")?.addEventListener("click", () => { sel.tpl = null; refresh(); });
 }
 
+function spotsTxt(tpl) {
+  const n = map.entries[tpl]?.length || 0, c = useCont() ? map.contN[tpl] || 0 : 0;
+  return [n ? `${n} spot${n > 1 ? "s" : ""}` : "", c ? `${c} container${c > 1 ? "s" : ""}` : ""].filter(Boolean).join(", ") || "rare";
+}
 function renderList(cand) {
   $("list-label").textContent = sel.tpl ? "Other matches" : "Items, most common first";
   if (!cand.length) { $("list").innerHTML = `<p class="empty">Nothing matches on this map. Try another loot type or a lower value.</p>`; return; }
@@ -1491,7 +1508,7 @@ function renderList(cand) {
     return `<button class="item" data-tpl="${tpl}" aria-current="${sel.tpl === tpl}">
       <span class="n">${esc(m[0])}</span><span class="e">${fmtExp(e)}</span>
       <span class="bar"><i style="width:${Math.max(2, (e / max) * 100)}%"></i></span>
-      <span class="m">${esc(CATS[m[2]]?.[0] || "Other")} · ${fmtRub(m[3])} · ${map.entries[tpl].length} spots</span></button>`;
+      <span class="m">${esc(CATS[m[2]]?.[0] || "Other")} · ${fmtRub(m[3])} · ${spotsTxt(tpl)}</span></button>`;
   }).join("") + (cand.length > 60 ? `<p class="empty">${cand.length - 60} more. Search to narrow.</p>` : "");
 }
 $("list").addEventListener("click", (e) => { const b = e.target.closest(".item"); if (!b) return; sel.tpl = b.dataset.tpl === sel.tpl ? null : b.dataset.tpl; refresh(); });
@@ -2092,11 +2109,11 @@ function renderRunOut(r) {
     : target > S.avail
       ? `<p class="note">${esc(what)} on ${esc(map.name)} averages ${fmtRub(Math.round(S.avail))} per raid even checking every spot you can reach, so ${fmtRub(target)} isn't possible on an average raid. This route goes for the part that's worth the walk.</p>`
       : `<p class="note">${esc(what)} on ${esc(map.name)} averages ${fmtRub(Math.round(S.avail))} per raid if you check every spot you can reach. Getting ${fmtRub(target)} means checking nearly all of them, so this route goes for the part that's worth the walk.</p>`;
-  const blocked = S.blockedVal >= (goal === "count" ? 0.01 : 5000) ? `<p class="note">Another ${goal === "count" ? (S.blockedVal < 1 ? S.blockedVal.toFixed(2) : S.blockedVal.toFixed(1)) + " " + esc(what) : fmtRub(Math.round(S.blockedVal))} on average sits behind doors you can't open. Tick keys in My keys, or allow other keys.</p>` : "";
+  const blocked = S.blockedVal >= (goal === "count" ? 0.01 : 5000) ? `<p class="note">Another ${goal === "count" ? (S.blockedVal < 1 ? S.blockedVal.toFixed(2) : S.blockedVal.toFixed(1)) + " " + esc(what) : fmtRub(Math.round(S.blockedVal))} on average sits behind doors you can't open. Tick the keys you have in step 4, or plan through doors you don't have keys for.</p>` : "";
   const totals = [
     `<div><b>${Math.round(r.total)} m</b><span>walk, spawn to extract</span></div>`,
     goal === "count" ? `<div><b>${fmtOdds(S.pAny)}</b><span>you find at least one</span></div>` : `<div><b>~${fmtRub(Math.round(S.val))}</b><span>loot on an average raid</span></div>`,
-    goal === "value" ? `<div><b>${Math.round(S.slots)} / ${S.cap}</b><span>slots filled on average</span></div>` : `<div><b>${fmtOdds(S.pAny)}</b><span>you find something</span></div>`,
+    goal === "value" ? `<div><b>${Math.round(S.slots)} / ${S.cap}</b><span>slots filled on average</span></div>` : `<div><b>${S.cnt < 1 ? S.cnt.toFixed(2) : S.cnt < 10 ? S.cnt.toFixed(1) : Math.round(S.cnt)}</b><span>found on an average raid</span></div>`,
   ].join("");
   $("run-out").innerHTML = `<h3 class="run-h">Your route</h3><div class="run-total">${totals}</div>
     <button class="walk-btn" id="walk-btn"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z" fill="currentColor"/></svg>Walk the route</button>
@@ -2157,7 +2174,7 @@ function renderPlanner() {
 }
 function fillRunItems() {
   if (!map) return;
-  const names = Object.keys(map.expected).map((t) => ITEMS[t]?.[0]).filter(Boolean).sort();
+  const names = knownItems().map((t) => ITEMS[t]?.[0]).filter(Boolean).sort();
   $("run-items").innerHTML = names.map((n) => `<option value="${esc(n)}">`).join("");
 }
 $("run-what").addEventListener("click", (e) => {
@@ -2169,7 +2186,7 @@ $("run-what").addEventListener("click", (e) => {
   $("cat").dispatchEvent(new Event("change"));
 });
 $("run-q").addEventListener("input", () => {
-  const v = $("run-q").value.trim(), exact = Object.keys(map.expected).find((t) => ITEMS[t]?.[0] === v);
+  const v = $("run-q").value.trim(), exact = knownItems().find((t) => ITEMS[t]?.[0] === v);
   $("q").value = v;
   if (exact) { sel.tpl = exact; refresh(); } else $("q").dispatchEvent(new Event("input"));
 });
