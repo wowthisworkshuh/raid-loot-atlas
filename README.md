@@ -25,7 +25,8 @@ Place names come from tarkov.dev. Loot spots more than 15 m from the walk map (F
 - **Loose loot.** Each spot's chance comes from simulating SPT 4.1's loose-loot draw 6,000 times per map with the pack's loot amount (SVM preset: 0.7 x SPT's default). "Expected per raid" is how many of that item you'd find loose on the whole map in an average raid, if you could check every spot.
 - **Containers.** The chance per container you open comes straight from SPT 4.1's container loot tables. Container positions aren't stored on the server (they live in the map files), so they show up on the map after the map export below.
 - An item that always spawns at one of a group of spots (the Labs residential keycard, the Labyrinth keys) counts once per raid, shared across its spots.
-- Items added by mods (Tushonka Rare Collectibles) aren't included yet.
+- **Items added by mods.** Tushonka Rare Collectibles' 15 chase items (gold bar, diamond, Mona Lisa replica, missile...) are added the way the mod adds them at server start, at the pack's 0.1x: entries in safes, crates, caches and weapon boxes per map, and the mod's own loose spots (`build_loot_data.py --collectibles <the mod's "SPT 4.1" folder>`, from its MIT source, github.com/BinkoBunko/YellowDoge-TarkovRareCollectibles). Their new spots get their room and walk-graph area from `tools/append_points.py`. The pack's other mod items never spawn as loot (tuned guns come only on bots, ammo boxes only from traders).
+- **Not counted:** what bots carry, airdrops, and PvPvE mode's boost (1.5x loose, 1.25x containers): the odds are PVE's.
 
 ## Status
 
