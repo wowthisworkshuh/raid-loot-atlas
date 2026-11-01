@@ -345,6 +345,7 @@ body { margin: 0; }
           <button class="chip" data-t="glow" aria-pressed="true" style="--c: var(--glow)"><i></i>Loose loot</button>
           <button class="chip" data-t="cont" aria-pressed="true" style="--c: var(--cont)"><i></i>Containers</button>
           <button class="chip" data-t="ov" aria-pressed="false" style="--c: var(--fg)"><i></i>2D map</button>
+          <button class="chip" data-t="lm" aria-pressed="true" style="--c: var(--door-breach)"><i></i>Landmarks</button>
           <button class="chip" data-t="pins" aria-pressed="true" style="--c: var(--glow)"><i></i>Hotspot pins</button>
           <button class="chip" data-t="names" aria-pressed="true" style="--c: var(--fg)"><i></i>Place names</button>
           <button class="chip" data-t="p" aria-pressed="true" style="--c: var(--exit-pmc)"><i></i>PMC extracts</button>
@@ -489,7 +490,7 @@ new ResizeObserver(resize).observe(stage);
 
 // ---------- data ----------
 // every push stamps BUILD, so browsers never mix a cached old file with a new one (Pages caches 10 min)
-const BUILD = "202611010153";
+const BUILD = "202611010209";
 { const f0 = window.fetch.bind(window);
   window.fetch = (u, o) => f0(typeof u === "string" && /^(data|maps)\//.test(u) ? u + (u.includes("?") ? "&" : "?") + "v=" + BUILD : u, o); }
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
@@ -838,6 +839,7 @@ async function loadBlockout(id) {
       blockCache[bid] = await r.json();
       blockCache[bid].geo = g && g.ok ? await g.arrayBuffer() : null;
       blockCache[bid].dump = d && d.ok ? await d.json() : null;
+      try { const l = await fetch(`maps/${bid}-landmarks.json`); blockCache[bid].landmarks = l.ok ? await l.json() : null; } catch { blockCache[bid].landmarks = null; }
       if (blockCache[bid].terrain) {
         const t = await fetch(`maps/${blockCache[bid].terrain}`);
         if (t.ok) blockCache[bid].ground = parseTerrain(await t.arrayBuffer());
@@ -850,6 +852,8 @@ async function loadBlockout(id) {
     if (B.geo && B.combo) { blockRoot = new THREE.Group(); blockRoot.add(buildBlockout(B), buildGeo(B.geo, B, bid)); }
     else blockRoot = B.geo ? buildGeo(B.geo, B, bid) : buildBlockout(B);
     blockRoot.userData.axis = { ...AXIS };
+    landmarkObj = B.landmarks?.items?.length ? buildLandmarks(B.landmarks) : null;
+    if (landmarkObj) blockRoot.add(landmarkObj);
     scene.add(blockRoot);
     // the game's own exits (dump) when we have them; place names always from tarkov.dev
     buildMarks(B.dump ? { labels: B.labels, exits: B.dump.exits } : B);
@@ -1136,7 +1140,7 @@ $("reach-only").addEventListener("click", () => {
 });
 
 // ---------- extracts + place names ----------
-const SHOW = { glow: true, cont: true, ov: false, pins: true, names: true, p: true, s: true, t: true };
+const SHOW = { glow: true, cont: true, ov: false, lm: true, pins: true, names: true, p: true, s: true, t: true };
 try { Object.assign(SHOW, JSON.parse(localStorage.getItem("atlas-show") || "{}")); } catch {}
 let marks = [], beams = null, exitDots = null;
 // pillars and dots hide with the toggles and with the floor slice (by the extract's own height)
@@ -1205,6 +1209,7 @@ function applyToggles() {
   document.querySelectorAll("#toggles .chip").forEach((b) => b.setAttribute("aria-pressed", String(!!SHOW[b.dataset.t])));
   if (glowPts) glowPts.visible = SHOW.glow;
   if (contPts) contPts.visible = SHOW.cont;
+  if (landmarkObj) landmarkObj.visible = SHOW.lm;
   $("labels").hidden = !SHOW.pins;
   if (beams) {
     const a = beams.geometry.attributes.aOn, d = exitDots.geometry.attributes.aOn;
@@ -1420,6 +1425,160 @@ function pickFloor(i) {
   }
   computeHotspots();
   updateOverlay();
+}
+
+// ---------- landmarks (maps/<id>-landmarks.json from tools/build_landmarks.py) ----------
+// Low-poly models of the big props players navigate by, each fitted into the game's own collision box.
+const LM = { steel: [0.46, 0.48, 0.51], concrete: [0.70, 0.68, 0.64], light: [0.84, 0.84, 0.82], white: [0.93, 0.94, 0.95],
+  red: [0.74, 0.22, 0.18], yellow: [0.88, 0.68, 0.20], olive: [0.43, 0.48, 0.36], glass: [0.98, 0.90, 0.55], tower: [0.60, 0.63, 0.67] };
+let landmarkObj = null;
+function buildLandmarks(data) {
+  const A = new Acc(), P = (x, y, z) => toWorld(x, y, z);
+  const quad = (a, b, c, d, col, grid = 0) => A.quad(P(...a), P(...b), P(...c), P(...d), col, grid, 1);
+  // a box from eight game-space corners: c[0..3] bottom ring, c[4..7] top ring
+  const hull = (c, col, topCol, grid = 0) => {
+    for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; quad(c[i], c[j], c[j + 4], c[i + 4], col, grid); }
+    quad(c[4], c[5], c[6], c[7], topCol || col, grid);
+  };
+  // frame of an item: u across (w), v along (d), y up from its base
+  const frame = (it) => { const fx = Math.sin(it.yaw), fz = Math.cos(it.yaw), rx = fz, rz = -fx;
+    return (u, v, y) => [it.x + rx * u + fx * v, it.y + y, it.z + rz * u + fz * v]; };
+  const box = (L, u0, u1, v0, v1, y0, y1, col, top, grid) =>
+    hull([L(u0, v0, y0), L(u1, v0, y0), L(u1, v1, y0), L(u0, v1, y0), L(u0, v0, y1), L(u1, v0, y1), L(u1, v1, y1), L(u0, v1, y1)], col, top, grid);
+  const beam = (a, b, t, col) => { // a square bar between two game points
+    const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(...d) || 1, n = d.map((x) => x / L);
+    let p = Math.abs(n[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const cr = (x, y) => [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]];
+    let e1 = cr(n, p); const l1 = Math.hypot(...e1); e1 = e1.map((x) => x / l1 * t / 2); const e2 = cr(n, e1);
+    const at = (o, s1, s2) => [o[0] + e1[0] * s1 + e2[0] * s2, o[1] + e1[1] * s1 + e2[1] * s2, o[2] + e1[2] * s1 + e2[2] * s2];
+    const c = [at(a, -1, -1), at(a, 1, -1), at(a, 1, 1), at(a, -1, 1), at(b, -1, -1), at(b, 1, -1), at(b, 1, 1), at(b, -1, 1)];
+    hull(c, col, col); quad(c[3], c[2], c[1], c[0], col);
+  };
+  const cyl = (x, z, y0, y1, r0, r1, col, seg = 12, cap = true, capCol) => {
+    for (let i = 0; i < seg; i++) {
+      const a = i / seg * Math.PI * 2, b = (i + 1) / seg * Math.PI * 2;
+      const p = (r, t, y) => [x + Math.cos(t) * r, y, z + Math.sin(t) * r];
+      quad(p(r0, a, y0), p(r0, b, y0), p(r1, b, y1), p(r1, a, y1), col);
+      if (cap) A.tri(P(x, y1, z), P(...p(r1, b, y1)), P(...p(r1, a, y1)), capCol || col, 0, 1);
+    }
+  };
+  const dome = (x, y, z, r, col, seg = 14) => { // upper half sphere
+    const rings = 5;
+    for (let k = 0; k < rings; k++) {
+      const t0 = k / rings * Math.PI / 2, t1 = (k + 1) / rings * Math.PI / 2;
+      cyl(x, z, y + Math.sin(t0) * r, y + Math.sin(t1) * r, Math.cos(t0) * r, Math.cos(t1) * r, col, seg, k === rings - 1);
+    }
+  };
+  const lattice = (L, w0, w1, y0, y1, t, col, bays) => { // 4-leg tapered lattice tower with ties
+    const c = (s, y) => { const k = (y - y0) / (y1 - y0), hw = (w0 + (w1 - w0) * k) / 2; return [[-hw, -hw], [hw, -hw], [hw, hw], [-hw, hw]].map(([u, v]) => L(u * s, v * s, y)); };
+    const b0 = c(1, y0), b1 = c(1, y1);
+    for (let i = 0; i < 4; i++) beam(b0[i], b1[i], t, col);
+    for (let k = 1; k <= bays; k++) { const y = y0 + (y1 - y0) * k / bays, r = c(1, y); for (let i = 0; i < 4; i++) beam(r[i], r[(i + 1) % 4], t * 0.6, col); }
+  };
+  for (const it of data.items || []) {
+    const L = frame(it), h = it.h, w = it.w, d = it.d;
+    switch (it.t) {
+      case "chimney": {
+        const r0 = w / 2, r1 = w * 0.34, band = h * 0.06;
+        cyl(it.x, it.z, it.y, it.y + h - band * 3, r0, r1 + (r0 - r1) * band * 3 / h, LM.concrete, 14, false);
+        for (let k = 0; k < 3; k++) { const ya = it.y + h - band * (3 - k), yb = ya + band, f = (y) => r1 + (r0 - r1) * (it.y + h - y) / h;
+          cyl(it.x, it.z, ya, yb, f(ya), f(yb), k % 2 ? LM.white : LM.red, 14, k === 2, [0.12, 0.12, 0.12]); }
+        break; }
+      case "cooling": { // hourglass shell, open top
+        const R = w / 2, prof = [[0, 1], [0.35, 0.74], [0.75, 0.64], [1, 0.72]];
+        for (let k = 0; k < prof.length - 1; k++) cyl(it.x, it.z, it.y + prof[k][0] * h, it.y + prof[k + 1][0] * h, R * prof[k][1], R * prof[k + 1][1], LM.light, 20, false);
+        cyl(it.x, it.z, it.y + h - 0.3, it.y + h - 0.2, R * 0.72, R * 0.72, [0.2, 0.2, 0.2], 20, true, [0.22, 0.22, 0.22]);
+        break; }
+      case "pylon": case "pylon2": {
+        lattice(L, w * 0.9, w * 0.14, 0, h * 0.95, 0.35, LM.steel, 5);
+        for (const f of [0.78, 0.92]) beam(L(0, -d / 2, h * f), L(0, d / 2, h * f), 0.45, LM.steel);
+        beam(L(0, 0, h * 0.95), L(0, 0, h), 0.3, LM.steel);
+        break; }
+      case "billboard":
+        cyl(it.x, it.z, it.y, it.y + h * 0.66, 1.1, 0.9, LM.steel, 10);
+        box(L, -0.6, 0.6, -d / 2, d / 2, h * 0.64, h, LM.light, LM.light);
+        break;
+      case "gantry":
+        for (const v of [-d / 2 + 0.8, d / 2 - 0.8]) for (const u of [-w / 2, w / 2]) beam(L(u, v, 0), L(u * 0.4, v, h - 1.6), 0.7, LM.yellow);
+        box(L, -w * 0.35, w * 0.35, -d / 2, d / 2, h - 1.6, h, LM.yellow, LM.yellow);
+        break;
+      case "portcrane": {
+        const a = w / 2 - 0.6, top = h * 0.72;
+        for (const u of [-a, a]) for (const v of [-a, a]) beam(L(u, v, 0), L(u, v, top), 0.9, LM.yellow);
+        for (const u of [-a, a]) beam(L(u, -a, top * 0.5), L(u, a, top * 0.5), 0.6, LM.yellow);
+        box(L, -a, a, -d / 2, d / 2, top, top + 1.8, LM.yellow, LM.yellow);
+        box(L, -a * 0.6, a * 0.6, -a, a * 0.2, top + 1.8, h, LM.light, LM.light);
+        break; }
+      case "towercrane": {
+        const mast = h - 7;
+        lattice(L, 2.2, 2.2, 0, mast, 0.3, LM.yellow, Math.max(4, Math.round(mast / 4)));
+        box(L, -1.3, 1.3, -1.3, 1.3, mast, mast + 3, LM.yellow, LM.yellow);                 // slewing ring + cab
+        beam(L(0, -14, mast + 3.4), L(0, 45, mast + 3.4), 1.4, LM.yellow);                  // jib and counter-jib
+        box(L, -1.4, 1.4, -15, -10, mast + 1.2, mast + 3.4, LM.concrete, LM.concrete);      // counterweight
+        beam(L(0, 0, mast + 3), L(0, 0, h), 0.6, LM.yellow);                                 // apex
+        beam(L(0, 0, h), L(0, 30, mast + 3.6), 0.12, LM.steel); beam(L(0, 0, h), L(0, -13, mast + 3.6), 0.12, LM.steel);
+        break; }
+      case "weather": {
+        const r = w * 0.45;
+        cyl(it.x, it.z, it.y, it.y + h - 2 * r * 0.9, w * 0.2, w * 0.16, LM.light, 10, false);
+        dome(it.x, it.y + h - 2 * r * 0.95, it.z, r, LM.white); cyl(it.x, it.z, it.y + h - 2 * r * 0.95 - r * 0.9, it.y + h - 2 * r * 0.95, r * 0.45, r, LM.white, 14, false);
+        break; }
+      case "radome": {
+        const r = Math.min(w, d) / 2;
+        cyl(it.x, it.z, it.y, it.y + h - r, r, r, LM.light, 16, false);
+        dome(it.x, it.y + h - r, it.z, r, LM.white, 16);
+        break; }
+      case "mast":
+        lattice(L, Math.min(w, 3), 0.6, 0, h * 0.97, 0.22, LM.red, Math.max(4, Math.round(h / 5)));
+        beam(L(0, 0, h * 0.97), L(0, 0, h), 0.2, LM.white);
+        break;
+      case "lighthouse": {
+        const top = h * 0.8, r0 = 3.6, r1 = 2.6, bands = 5;
+        for (let k = 0; k < bands; k++) { const y0 = top * k / bands, y1 = top * (k + 1) / bands, rr = (y) => r0 + (r1 - r0) * y / top;
+          cyl(it.x, it.z, it.y + y0, it.y + y1, rr(y0), rr(y1), k % 2 ? LM.red : LM.white, 14, false); }
+        cyl(it.x, it.z, it.y + top, it.y + top + 0.5, 3.8, 3.8, LM.steel, 14);
+        cyl(it.x, it.z, it.y + top + 0.5, it.y + h * 0.93, 2.1, 2.1, LM.glass, 12, false);
+        cyl(it.x, it.z, it.y + h * 0.93, it.y + h, 2.4, 0.2, LM.red, 12, false);
+        break; }
+      case "tank":
+        cyl(it.x, it.z, it.y, it.y + h * 0.9, w / 2, w / 2, LM.light, 24, false);
+        cyl(it.x, it.z, it.y + h * 0.9, it.y + h, w / 2, w * 0.1, LM.concrete, 24, true);
+        break;
+      case "block":
+        box(L, -w / 2, w / 2, -d / 2, d / 2, 0, h, LM.tower, [0.70, 0.72, 0.75], 1);
+        break;
+      case "plane": {
+        const len = Math.max(d, 10), span = Math.max(w, len * 0.9), fw = Math.max(1.8, len * 0.1);
+        box(L, -fw / 2, fw / 2, -len / 2, len / 2, 0.3, 0.3 + fw * 1.1, LM.olive, LM.olive);
+        box(L, -span / 2, span / 2, -len * 0.05, len * 0.13, 0.9, 1.3, LM.olive, LM.olive);
+        box(L, -span * 0.18, span * 0.18, -len / 2, -len * 0.4, 1.2, 1.5, LM.olive, LM.olive);
+        box(L, -0.2, 0.2, -len / 2, -len * 0.38, 1.2, 1.2 + fw * 1.6, LM.olive, LM.olive);
+        break; }
+      case "heli": {
+        const len = Math.max(d, 10), bw = Math.max(2.2, w * 0.45);
+        box(L, -bw / 2, bw / 2, -len * 0.05, len * 0.5, 0.4, 3.0, LM.olive, LM.olive);
+        box(L, -0.4, 0.4, -len / 2, -len * 0.05, 1.6, 2.4, LM.olive, LM.olive);
+        box(L, -0.15, 0.15, -len / 2, -len * 0.42, 2.0, 4.0, LM.olive, LM.olive);
+        cyl(it.x + Math.sin(it.yaw) * len * 0.22, it.z + Math.cos(it.yaw) * len * 0.22, it.y + Math.max(3.4, h - 0.6), it.y + Math.max(3.5, h - 0.5), len * 0.4, len * 0.4, [0.25, 0.27, 0.24], 16, true, [0.25, 0.27, 0.24]);
+        break; }
+    }
+  }
+  const grp = A.mesh();
+  // power lines, sagging a little between pylons
+  if (data.wires?.length) {
+    const pos = [];
+    for (const w of data.wires) {
+      const a = w.slice(0, 3), b = w.slice(3, 6), span = Math.hypot(b[0] - a[0], b[2] - a[2]), sag = span * 0.025, n = 8;
+      for (let k = 0; k < n; k++) {
+        const t0 = k / n, t1 = (k + 1) / n, pt = (t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - 4 * sag * t * (1 - t), a[2] + (b[2] - a[2]) * t];
+        pos.push(...P(...pt(t0)), ...P(...pt(t1)));
+      }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    grp.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1a1d20, transparent: true, opacity: 0.8 })));
+  }
+  grp.visible = SHOW.lm;
+  return grp;
 }
 
 // ---------- loot run (maps/<id>-paths.bin + -paths.json from tools/build_paths.py) ----------
@@ -1691,7 +1850,9 @@ function applySlice(exactLo, exactHi) {
     if (lo > hi) { if (document.activeElement === $("ymin")) $("ymax").value = hi = lo; else $("ymin").value = lo = hi; }
   }
   uniforms.uYMin.value = lo - 0.01; uniforms.uYMax.value = hi + 0.01;
-  devClip.value = (exactLo != null ? hi - 0.6 : hi) + 0.01; // floor views cut just under the next floor's slab
+  // floor views cut just under the next floor's slab; the full range cuts nothing (tall landmarks, roofs)
+  const full = exactLo == null && lo <= map.ymin + 0.01 && hi >= map.ymax - 0.01;
+  devClip.value = full ? 1e4 : (exactLo != null ? hi - 0.6 : hi) + 0.01;
   $("ymin-o").textContent = lo.toFixed(1) + " m"; $("ymax-o").textContent = hi.toFixed(1) + " m";
 }
 for (const id of ["ymin", "ymax"]) $(id).addEventListener("input", () => {

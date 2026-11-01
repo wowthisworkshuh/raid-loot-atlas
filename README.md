@@ -16,6 +16,8 @@ Each map is a rough "dev blockout": grey grid boxes like an unfinished Source ma
 - **Indoor and city maps** (Factory, Labs, Ground Zero): a floor plan from the walk map: dark floors where you can walk, light walls along every walkable edge (2.4 m on every level, never across a doorway), railings at drops, furniture outlines. Roofs, ceilings and unreachable rooftops are left out.
 - **2D map** (Show on map): paints the tarkov.dev fan map onto the ground and floors, matching the floor you're viewing. The SVGs are in `maps/svg` with their licence. The Labs fan map isn't drawn to scale, so it sits up to 1-1.5 m off there.
 
+- **Landmarks** (Show on map): low-poly models of the big props players navigate by, each placed in the game's own collision box (exact position, size and facing) by `tools/build_landmarks.py`: smokestacks, cooling towers, powerline pylons with their wires, tower, gantry and container cranes, billboard towers (IDEA, OLI), the Shoreline weather tower, Reserve's radar dome and radio mast, the lighthouse, Lighthouse's water-treatment tanks, the Woods crash-site plane and Reserve's helicopter. Every copy of a prop shares its collision size, so each type is found by that size on every map.
+
 Place names come from tarkov.dev. Loot spots more than 15 m from the walk map (Factory has 111 leftover spots about 200 m outside the building) are not drawn or counted.
 
 ## How the odds work
