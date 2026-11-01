@@ -622,7 +622,7 @@ new ResizeObserver(resize).observe(stage);
 
 // ---------- data ----------
 // every push stamps BUILD, so browsers never mix a cached old file with a new one (Pages caches 10 min)
-const BUILD = "202611010355";
+const BUILD = "202611010407";
 { const f0 = window.fetch.bind(window);
   window.fetch = (u, o) => f0(typeof u === "string" && /^(data|maps)\//.test(u) ? u + (u.includes("?") ? "&" : "?") + "v=" + BUILD : u, o); }
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
@@ -1050,8 +1050,33 @@ function buildGeo3(buf, B, bid) {
   }
   return A.mesh();
 }
+// GEO4: the building scan (MapDump 0.3) merged into boxes: floors by storey, 15 cm stair steps, walls as tall as
+// the storey, furniture to its real top, glass. Faces between touching boxes stay (cheap; hidden anyway).
+function buildGeo4(buf, B, bid) {
+  const n = new DataView(buf).getInt32(4, true), X = new Float32Array(buf, 8, n * 7);
+  const A = new Acc(), storey = storeyFn(B, bid);
+  const P = (x, y, z) => { const [a, , b] = toWorld(x, 0, z); return [a, y, b]; };
+  const dark = (c, f) => c.map((v) => v * f);
+  const STAIR = [0.66, 0.60, 0.47], STAIR_SIDE = [0.46, 0.42, 0.34], GLASS = [0.55, 0.72, 0.82];
+  for (let i = 0; i < n; i++) {
+    const o = i * 7, x0 = X[o], z0 = X[o + 1], x1 = X[o + 2], z1 = X[o + 3], y0 = X[o + 4], y1 = X[o + 5], k = X[o + 6] | 0;
+    let top, side;
+    if (k === 0) { const lv = storey((x0 + x1) / 2, y1, (z0 + z1) / 2); top = FLOOR_LEVELS[Math.max(0, Math.min(FLOOR_LEVELS.length - 1, lv + 1))]; side = dark(top, 0.75); }
+    else if (k === 1) { top = DEV.wallTop; side = DEV.planWall; }
+    else if (k === 2) { top = DEV.propTop; side = DEV.propSide; }
+    else if (k === 3) { top = GLASS; side = GLASS; }
+    else { top = STAIR; side = STAIR_SIDE; }
+    const a = P(x0, y0, z0), b = P(x1, y0, z0), c = P(x1, y0, z1), d = P(x0, y0, z1);
+    const up = (p) => [p[0], y1, p[2]];
+    A.quad(up(a), up(b), up(c), up(d), top, k === 0 ? 1 : 0, 1);
+    A.quad(a, b, up(b), up(a), side, 0, 1); A.quad(b, c, up(c), up(b), side, 0, 1);
+    A.quad(c, d, up(d), up(c), side, 0, 1); A.quad(d, a, up(a), up(d), side, 0, 1);
+  }
+  return A.mesh();
+}
 function buildGeo(buf, B, bid) {
   const dv = new DataView(buf);
+  if (String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) === "GEO4") return buildGeo4(buf, B, bid);
   if (String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) === "GEO3") return buildGeo3(buf, B, bid);
   const v2 = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) === "GEO2", stride = v2 ? 11 : 10;
   const nb = dv.getInt32(4, true), nv = dv.getInt32(8, true), nt = dv.getInt32(12, true);
