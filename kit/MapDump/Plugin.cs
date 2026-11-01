@@ -44,6 +44,7 @@ namespace SurvivalPack.MapDump
         ConfigEntry<bool> _scan;
         ConfigEntry<float> _scanCell;
         ConfigEntry<int> _scanBudget;
+        ConfigEntry<bool> _leave;
         bool _scanning;
         readonly HashSet<string> _done = new HashSet<string>();
         string _msg; float _msgUntil;
@@ -58,6 +59,7 @@ namespace SurvivalPack.MapDump
             _scan = Config.Bind("Scan", "Scan buildings", true, "After the dump, sample the buildings with raycasts (floors, stairs, walls, ceilings) into scan.bin. Takes a minute or two; stay in the raid.");
             _scanCell = Config.Bind("Scan", "Cell size (m)", 0.25f, "Distance between samples. 0.25 shows stairs and thin walls; 0.5 is four times faster.");
             _scanBudget = Config.Bind("Scan", "Milliseconds per frame", 40, "How long the scan may run each frame. Higher is faster but the game stutters more.");
+            _leave = Config.Bind("Dump", "Leave raid when done", false, "For a dumping session: when the dump and building scan are written, end the raid as Survived (you keep your gear) so you're back in the menu for the next map.");
             Logger.LogInfo("SurvivalPack.MapDump 0.3.0 ready (Ctrl+F10 in raid)");
         }
 
@@ -75,6 +77,7 @@ namespace SurvivalPack.MapDump
                 else _worldSeenAt = -1;
             }
             if (_world == null) return; // also true once the raid's world is destroyed
+            if (_leaveAt > 0 && Time.realtimeSinceStartup >= _leaveAt) { _leaveAt = -1; LeaveRaid(_leaveMap); }
 
             // the map id is filled in a while after the world appears, so read it when dumping
             if (_key.Value.IsDown()) { Dump(MapId(_world)); return; }
@@ -270,12 +273,48 @@ namespace SurvivalPack.MapDump
                 info.Append($"\"cell\":{(1f / k).ToString(Inv)},\"k\":{k},\"x0\":{minX.ToString(Inv)},\"z0\":{minZ.ToString(Inv)},\"cx\":{cx},\"cz\":{cz},");
                 info.Append($"\"scannedCells\":{scanned},\"fineCells\":{(long)scanned * k * k},\"surfaces\":{surfaces},\"seconds\":{(int)clock.Elapsed.TotalSeconds}}}");
                 File.WriteAllText(Path.Combine(dir, "scan.json"), info.ToString());
-                Say($"Building scan for {map} written: {scanned:N0} m² of buildings, {surfaces:N0} surfaces, {(int)clock.Elapsed.TotalSeconds} s. You can leave the raid.");
+                Say($"Building scan for {map} written: {scanned:N0} m² of buildings, {surfaces:N0} surfaces, {(int)clock.Elapsed.TotalSeconds} s. " + (_leave.Value ? "Leaving the raid in 5 s." : "You can leave the raid."));
+                if (_leave.Value) { _leaveAt = Time.realtimeSinceStartup + 5f; _leaveMap = map; }
             }
             finally
             {
                 if (w != null) { w.Dispose(); try { File.Delete(path); } catch { } }
                 _scanning = false;
+            }
+        }
+
+        float _leaveAt = -1; string _leaveMap;
+
+        // ends the raid the way extract mods do: Singleton<AbstractGame>.Instance.Stop(profileId, ExitStatus.Survived, exitName, delay)
+        void LeaveRaid(string map)
+        {
+            try
+            {
+                var ag = FindType("EFT.AbstractGame"); var single = FindType("Comfort.Common.Singleton`1"); var gw = FindType("EFT.GameWorld");
+                var game = single.MakeGenericType(ag).GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                var world = single.MakeGenericType(gw).GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                var player = world == null ? null : Get(world, "MainPlayer");
+                var profileId = player == null ? null : Str(Get(player, "ProfileId"));
+                if (game == null || profileId == null) throw new Exception("no game or player");
+                var stop = game.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Where(m => m.Name == "Stop").Select(m => (m, ps: m.GetParameters()))
+                    .Where(x => x.ps.Length >= 2 && x.ps[0].ParameterType == typeof(string) && x.ps[1].ParameterType.IsEnum && x.ps[1].ParameterType.Name == "ExitStatus")
+                    .OrderByDescending(x => x.ps.Length).FirstOrDefault();
+                if (stop.m == null) throw new Exception("no Stop method");
+                var status = Enum.Parse(stop.ps[1].ParameterType, "Survived");
+                var args = new object[stop.ps.Length]; args[0] = profileId; args[1] = status;
+                for (int i = 2; i < args.Length; i++)
+                {
+                    var t = stop.ps[i].ParameterType;
+                    args[i] = t == typeof(string) ? "MapDump" : t == typeof(float) ? 0f : (stop.ps[i].HasDefaultValue ? stop.ps[i].DefaultValue : (t.IsValueType ? Activator.CreateInstance(t) : null));
+                }
+                stop.m.Invoke(game, args);
+                Logger.LogInfo($"Left the raid on {map} after the dump");
+            }
+            catch (Exception e)
+            {
+                Say($"Dump and scan for {map} are done, but leaving automatically didn't work ({e.Message}). Leave the raid yourself.");
+                Logger.LogWarning(e);
             }
         }
 
