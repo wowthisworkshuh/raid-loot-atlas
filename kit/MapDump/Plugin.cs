@@ -10,6 +10,10 @@
 //                    component whose type name has "Link" or "NavMesh" in it (EFT's door links, jumps,
 //                    ladders), with every position, transform and scalar on it
 //   meta.json        map id, game and plugin versions, counts
+// Auto session (0.3): Ctrl+F11 in the main menu runs every map that has no scan yet, one after another: it
+// clicks through the menus by the buttons' text (side, map, Next/Ready, Fika's Host raid / Start), waits for the
+// dump and scan, leaves the raid as Survived and clicks past the end-of-raid screens. Ctrl+F9 writes the button
+// texts it can see to ui-texts.txt (to fix names that differ). The texts are in the config (section Session).
 //   scan.bin         (0.3) the buildings as the game's own collision sees them, sampled every 25 cm: every
 //                    surface under each point (floors, stair ramps, roofs, from repeated downward raycasts) and,
 //                    on each floor, whether something solid stands at knee and head height (walls, furniture,
@@ -45,6 +49,8 @@ namespace SurvivalPack.MapDump
         ConfigEntry<float> _scanCell;
         ConfigEntry<int> _scanBudget;
         ConfigEntry<bool> _leave;
+        ConfigEntry<KeyboardShortcut> _sessionKey, _textsKey;
+        ConfigEntry<string> _sessionMaps, _mapNames, _menuButtons, _sideButton;
         bool _scanning;
         readonly HashSet<string> _done = new HashSet<string>();
         string _msg; float _msgUntil;
@@ -60,7 +66,14 @@ namespace SurvivalPack.MapDump
             _scanCell = Config.Bind("Scan", "Cell size (m)", 0.25f, "Distance between samples. 0.25 shows stairs and thin walls; 0.5 is four times faster.");
             _scanBudget = Config.Bind("Scan", "Milliseconds per frame", 40, "How long the scan may run each frame. Higher is faster but the game stutters more.");
             _leave = Config.Bind("Dump", "Leave raid when done", false, "For a dumping session: when the dump and building scan are written, end the raid as Survived (you keep your gear) so you're back in the menu for the next map.");
-            Logger.LogInfo("SurvivalPack.MapDump 0.3.0 ready (Ctrl+F10 in raid)");
+            _sessionKey = Config.Bind("Session", "Start or stop", new KeyboardShortcut(KeyCode.F11, KeyCode.LeftControl), "In the main menu: load every map that has no building scan yet, one after another, by itself.");
+            _textsKey = Config.Bind("Session", "Write button texts", new KeyboardShortcut(KeyCode.F9, KeyCode.LeftControl), "Write every button text on screen to BepInEx/survivalpack-mapdump/ui-texts.txt.");
+            _sessionMaps = Config.Bind("Session", "Maps", "factory4_day,bigmap,woods,shoreline,interchange,lighthouse,rezervbase,sandbox,laboratory,labyrinth", "Maps the session loads, in order (maps that already have scan.bin are skipped).");
+            _mapNames = Config.Bind("Session", "Map names on screen", "factory4_day=Factory,bigmap=Customs,woods=Woods,shoreline=Shoreline,interchange=Interchange,lighthouse=Lighthouse,rezervbase=Reserve,sandbox=Ground Zero,laboratory=The Lab,labyrinth=Labyrinth", "How each map is labelled on the map selection screen.");
+            _sideButton = Config.Bind("Session", "Side button", "PMC", "Button clicked on the side selection screen (PMC or SCAV).");
+            _menuButtons = Config.Bind("Session", "Menu buttons", "Host raid;Start;Ready;Next;Escape from Tarkov;Back to main menu",
+                "Buttons the session clicks to move on, first match wins, separated by ;. The map is clicked first on the map screen, and the side button on the side screen.");
+            Logger.LogInfo("SurvivalPack.MapDump 0.3.0 ready (Ctrl+F10 in raid, Ctrl+F11 in the menu for an auto session)");
         }
 
         UnityEngine.Object _world;
@@ -76,7 +89,9 @@ namespace SurvivalPack.MapDump
                 if (_world != null) { _worldSeenAt = Time.realtimeSinceStartup; _retryNav = 0; }
                 else _worldSeenAt = -1;
             }
-            if (_world == null) return; // also true once the raid's world is destroyed
+            if (_textsKey.Value.IsDown()) WriteTexts();
+            if (_world == null) { if (_sessionKey.Value.IsDown()) ToggleSession(); if (_session != null) SessionMenuTick(); return; } // also true once the raid's world is destroyed
+            if (_sessionKey.Value.IsDown() && _session != null) { _session = null; Say("Auto session stopped. This raid still finishes its dump."); }
             if (_leaveAt > 0 && Time.realtimeSinceStartup >= _leaveAt) { _leaveAt = -1; LeaveRaid(_leaveMap); }
 
             // the map id is filled in a while after the world appears, so read it when dumping
@@ -134,12 +149,14 @@ namespace SurvivalPack.MapDump
                 {
                     _navMissing.Add(map);
                     Say($"Map dump for {map} written WITHOUT the walk map: this game isn't running the AI. Host the raid yourself (not on the headless) or play offline, then dump again. {doors} doors, {conts} containers, {exits} exits saved.");
+                    if (_session != null) { _session.Remove(SessionKey(map)); _leaveAt = Time.realtimeSinceStartup + 8f; _leaveMap = map; }
                 }
                 else
                 {
                     _navMissing.Remove(map);
                     Say($"Map dump for {map} written: {tris:N0} walk triangles, {doors} doors, {conts} containers, {exits} exits, {boxes + meshes:N0} wall/floor shapes. Folder: BepInEx/survivalpack-mapdump/{Safe(map)}");
                     if (_scan.Value) StartCoroutine(Scan(dir, map));
+                    else if (_session != null) { SessionDone(map); _leaveAt = Time.realtimeSinceStartup + 5f; _leaveMap = map; }
                 }
             }
             catch (Exception e)
@@ -149,6 +166,141 @@ namespace SurvivalPack.MapDump
                 Logger.LogError(e);
             }
         }
+
+        // ---------- auto session: load the maps one after another by clicking through the menus ----------
+        List<string> _session;           // maps still to do (null: no session)
+        float _nextClick, _menuIdleSince = -1, _onMapScreenSince = -1, _mapClickedAt = -1;
+        string _lastClicked;
+
+        static string SessionKey(string map) => map.StartsWith("factory4", StringComparison.Ordinal) ? "factory4_day" : map.StartsWith("sandbox", StringComparison.Ordinal) ? "sandbox" : map;
+
+        void ToggleSession()
+        {
+            if (_session != null) { _session = null; Say("Auto session stopped."); return; }
+            var root = Path.Combine(Paths.BepInExRootPath, "survivalpack-mapdump");
+            _session = _sessionMaps.Value.Split(',').Select(m => m.Trim().ToLowerInvariant()).Where(m => m.Length > 0)
+                .Where(m => !File.Exists(Path.Combine(root, Safe(m), "scan.bin"))).ToList();
+            if (_session.Count == 0) { _session = null; Say("Every map in the session list already has a building scan. Delete a map's folder to redo it."); return; }
+            _menuIdleSince = Time.realtimeSinceStartup; _onMapScreenSince = -1; _mapClickedAt = -1;
+            Say($"Auto session: {_session.Count} maps to go ({string.Join(", ", _session.Select(DisplayName))}). Ctrl+F11 stops it.");
+        }
+
+        void SessionDone(string map)
+        {
+            if (_session == null) return;
+            _session.Remove(SessionKey(map));
+            if (_session.Count == 0) { _session = null; Say($"Auto session finished: every map is dumped and scanned. Zip BepInEx/survivalpack-mapdump and send it."); }
+        }
+
+        string DisplayName(string map)
+        {
+            foreach (var kv in _mapNames.Value.Split(','))
+            {
+                var p = kv.Split('='); if (p.Length == 2 && p[0].Trim().Equals(map, StringComparison.OrdinalIgnoreCase)) return p[1].Trim();
+            }
+            return map;
+        }
+
+        void SessionMenuTick()
+        {
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextClick || _scanning) return;
+            _nextClick = now + 0.8f;
+            if (_session.Count == 0) { _session = null; return; }
+            var target = _session[0];
+            var texts = VisibleTexts();
+            if (texts.Count == 0) return; // loading screen
+            string Norm(string x) => x.Trim().ToUpperInvariant();
+            var allNames = _mapNames.Value.Split(',').Select(kv => kv.Split('=')).Where(p => p.Length == 2).Select(p => Norm(p[1])).ToList();
+            bool mapScreen = texts.Count(t => allNames.Contains(t.text)) >= 3;
+
+            if (mapScreen)
+            {
+                if (_onMapScreenSince < 0) _onMapScreenSince = now;
+                var mine = texts.FirstOrDefault(t => t.text == Norm(DisplayName(target)));
+                if (mine.go == null || now - _onMapScreenSince > 45f)
+                {   // this map can't be picked (locked, or named differently): skip it
+                    Say($"Auto session: couldn't pick {DisplayName(target)} on the map screen, skipping it.");
+                    _session.RemoveAt(0); _onMapScreenSince = now; _mapClickedAt = -1;
+                    return;
+                }
+                if (_mapClickedAt < 0 || now - _mapClickedAt > 6f) { Click(mine.go, mine.text); _mapClickedAt = now; return; }
+            }
+            else { _onMapScreenSince = -1; _mapClickedAt = -1; }
+
+            // the side screen: pick the side first
+            var side = Norm(_sideButton.Value);
+            var sideBtn = texts.FirstOrDefault(t => t.text == side);
+            if (sideBtn.go != null && _lastClicked != side && texts.Any(t => t.text == "NEXT")) { Click(sideBtn.go, side); return; }
+
+            foreach (var b in _menuButtons.Value.Split(';').Select(Norm).Where(b => b.Length > 0))
+            {
+                var hit = texts.FirstOrDefault(t => t.text == b);
+                if (hit.go == null) continue;
+                Click(hit.go, b);
+                _menuIdleSince = now;
+                return;
+            }
+            if (now - _menuIdleSince > 90f)
+            {
+                Say($"Auto session stuck: no button to press here (next map {DisplayName(target)}). Click on yourself; it picks up again. Ctrl+F9 writes the texts on screen for a fix.");
+                _menuIdleSince = now;
+            }
+        }
+
+        void Click(GameObject go, string what)
+        {
+            _lastClicked = what; _menuIdleSince = Time.realtimeSinceStartup;
+            try
+            {
+                var es = FindType("UnityEngine.EventSystems.EventSystem");
+                var cur = es?.GetProperty("current", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                var ped = Activator.CreateInstance(FindType("UnityEngine.EventSystems.PointerEventData"), cur);
+                var ee = FindType("UnityEngine.EventSystems.ExecuteEvents");
+                var exec = ee.GetMethods(BindingFlags.Public | BindingFlags.Static).First(m => m.Name == "ExecuteHierarchy" && m.IsGenericMethodDefinition);
+                foreach (var (iface, prop) in new[] { ("IPointerEnterHandler", "pointerEnterHandler"), ("IPointerDownHandler", "pointerDownHandler"), ("IPointerUpHandler", "pointerUpHandler"), ("IPointerClickHandler", "pointerClickHandler") })
+                {
+                    var it = FindType("UnityEngine.EventSystems." + iface);
+                    var fn = ee.GetProperty(prop, BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                    if (it != null && fn != null) exec.MakeGenericMethod(it).Invoke(null, new object[] { go, ped, fn });
+                }
+                Logger.LogInfo($"Auto session: clicked {what}");
+            }
+            catch (Exception e) { Logger.LogWarning($"Auto session: clicking {what} failed: {e}"); }
+        }
+
+        // every active, enabled text on screen (TextMeshPro and Unity UI), upper-cased, rich-text tags removed
+        List<(string text, GameObject go)> VisibleTexts()
+        {
+            var res = new List<(string, GameObject)>();
+            foreach (var tn in new[] { "TMPro.TMP_Text", "UnityEngine.UI.Text" })
+            {
+                var t = FindType(tn); if (t == null) continue;
+                var prop = t.GetProperty("text", BindingFlags.Public | BindingFlags.Instance);
+                foreach (var o in UnityEngine.Object.FindObjectsOfType(t))
+                {
+                    if (!(o is Behaviour c) || !c.isActiveAndEnabled) continue;
+                    string s; try { s = prop?.GetValue(o) as string; } catch { continue; }
+                    if (string.IsNullOrWhiteSpace(s)) continue;
+                    s = System.Text.RegularExpressions.Regex.Replace(s, "<[^>]*>", "").Trim().ToUpperInvariant();
+                    if (s.Length > 0 && s.Length < 60) res.Add((s, c.gameObject));
+                }
+            }
+            return res;
+        }
+
+        void WriteTexts()
+        {
+            try
+            {
+                var root = Path.Combine(Paths.BepInExRootPath, "survivalpack-mapdump"); Directory.CreateDirectory(root);
+                var lines = VisibleTexts().Select(t => t.text + "    (" + PathOf(t.go.transform) + ")").Distinct().ToList();
+                File.WriteAllLines(Path.Combine(root, "ui-texts.txt"), lines);
+                Say($"{lines.Count} texts on screen written to BepInEx/survivalpack-mapdump/ui-texts.txt");
+            }
+            catch (Exception e) { Say("Writing the texts failed: " + e.Message); }
+        }
+        static string PathOf(Transform t) { var s = t.name; for (int i = 0; i < 4 && t.parent != null; i++) { t = t.parent; s = t.name + "/" + s; } return s; }
 
         // ---------- building scan ----------
         // SCN1: "SCN1", int version 1, float coarse cell (1 m), int k (fine cells per coarse side), float x0, float z0,
@@ -274,7 +426,8 @@ namespace SurvivalPack.MapDump
                 info.Append($"\"scannedCells\":{scanned},\"fineCells\":{(long)scanned * k * k},\"surfaces\":{surfaces},\"seconds\":{(int)clock.Elapsed.TotalSeconds}}}");
                 File.WriteAllText(Path.Combine(dir, "scan.json"), info.ToString());
                 Say($"Building scan for {map} written: {scanned:N0} m² of buildings, {surfaces:N0} surfaces, {(int)clock.Elapsed.TotalSeconds} s. " + (_leave.Value ? "Leaving the raid in 5 s." : "You can leave the raid."));
-                if (_leave.Value) { _leaveAt = Time.realtimeSinceStartup + 5f; _leaveMap = map; }
+                SessionDone(map);
+                if (_leave.Value || _session != null) { _leaveAt = Time.realtimeSinceStartup + 5f; _leaveMap = map; }
             }
             finally
             {
