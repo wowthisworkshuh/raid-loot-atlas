@@ -87,7 +87,7 @@ namespace SurvivalPack.MapDump
             {
                 _nextLook = Time.realtimeSinceStartup + 2f;
                 _world = (FindByTypeName("EFT.GameWorld") ?? FindByTypeName("EFT.ClientGameWorld")) as UnityEngine.Object;
-                if (_world != null) { _worldSeenAt = Time.realtimeSinceStartup; _retryNav = 0; _blindUntick = null; _untickTries = 0; }
+                if (_world != null) { _worldSeenAt = Time.realtimeSinceStartup; _retryNav = 0; _blindUntick = null; _untickTries = 0; _waitRaidUntil = 0; }
                 else _worldSeenAt = -1;
             }
             if (_textsKey.Value.IsDown()) WriteTexts();
@@ -207,6 +207,12 @@ namespace SurvivalPack.MapDump
             float now = Time.realtimeSinceStartup;
             if (now < _nextClick || _scanning) return;
             _nextClick = now + 0.8f;
+            // after Start the raid is being made and loaded: hands off until it's there (or 4 minutes pass)
+            if (_waitRaidUntil > 0)
+            {
+                if (now < _waitRaidUntil) return;
+                _waitRaidUntil = 0; Say("Auto session: the raid didn't load within 4 minutes; carrying on in the menu.");
+            }
             if (_session.Count == 0) { _session = null; return; }
             var target = _session[0];
             var texts = VisibleTexts();
@@ -269,7 +275,7 @@ namespace SurvivalPack.MapDump
             }
         }
 
-        int _untickTries; string _blindUntick;
+        int _untickTries; string _blindUntick; float _waitRaidUntil;
         // the tick box that belongs to a label: on the label, a parent, or a parent's other children (a Toggle has a bool isOn)
         static Component FindToggle(GameObject label)
         {
@@ -306,6 +312,11 @@ namespace SurvivalPack.MapDump
         void Click(GameObject go, string what)
         {
             _lastClicked = what; _menuIdleSince = Time.realtimeSinceStartup;
+            if (what == "START") _waitRaidUntil = Time.realtimeSinceStartup + 240f;        // one Start only
+            if (what == "HOST RAID") _nextClick = Time.realtimeSinceStartup + 2.5f;       // let the dialog open
+            // a plain click first; the full enter/down/up/click only if the button ignored that (some buttons act on
+            // pointer up as well, and a doubled Start makes two raids)
+            bool full = _sameClicks >= 1;
             try
             {
                 var es = FindType("UnityEngine.EventSystems.EventSystem");
@@ -313,13 +324,16 @@ namespace SurvivalPack.MapDump
                 var ped = Activator.CreateInstance(FindType("UnityEngine.EventSystems.PointerEventData"), cur);
                 var ee = FindType("UnityEngine.EventSystems.ExecuteEvents");
                 var exec = ee.GetMethods(BindingFlags.Public | BindingFlags.Static).First(m => m.Name == "ExecuteHierarchy" && m.IsGenericMethodDefinition);
-                foreach (var (iface, prop) in new[] { ("IPointerEnterHandler", "pointerEnterHandler"), ("IPointerDownHandler", "pointerDownHandler"), ("IPointerUpHandler", "pointerUpHandler"), ("IPointerClickHandler", "pointerClickHandler") })
+                var steps = full
+                    ? new[] { ("IPointerEnterHandler", "pointerEnterHandler"), ("IPointerDownHandler", "pointerDownHandler"), ("IPointerUpHandler", "pointerUpHandler"), ("IPointerClickHandler", "pointerClickHandler") }
+                    : new[] { ("IPointerClickHandler", "pointerClickHandler") };
+                foreach (var (iface, prop) in steps)
                 {
                     var it = FindType("UnityEngine.EventSystems." + iface);
                     var fn = ee.GetProperty(prop, BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
                     if (it != null && fn != null) exec.MakeGenericMethod(it).Invoke(null, new object[] { go, ped, fn });
                 }
-                Logger.LogInfo($"Auto session: clicked {what}");
+                Logger.LogInfo($"Auto session: clicked {what}{(full ? " (full press)" : "")}");
             }
             catch (Exception e) { Logger.LogWarning($"Auto session: clicking {what} failed: {e}"); }
         }
