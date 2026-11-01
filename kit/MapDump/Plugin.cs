@@ -10,6 +10,11 @@
 //                    component whose type name has "Link" or "NavMesh" in it (EFT's door links, jumps,
 //                    ladders), with every position, transform and scalar on it
 //   meta.json        map id, game and plugin versions, counts
+//   scan.bin         (0.3) the buildings as the game's own collision sees them, sampled every 25 cm: every
+//                    surface under each point (floors, stair ramps, roofs, from repeated downward raycasts) and,
+//                    on each floor, whether something solid stands at knee and head height (walls, furniture,
+//                    glass). Raycasts work on every collider, including the meshes the game doesn't keep readable,
+//                    so this is the real layout inside buildings. Takes a minute or two after the dump; stay in raid.
 // Output: <SPT>/BepInEx/survivalpack-mapdump/<mapId>/. Nothing in the raid is changed.
 //
 // It reads game objects by type name with reflection, so it only references Unity and BepInEx and
@@ -30,12 +35,16 @@ using UnityEngine.SceneManagement;
 
 namespace SurvivalPack.MapDump
 {
-    [BepInPlugin("com.survivalpack.mapdump", "SurvivalPack.MapDump", "0.2.2")]
+    [BepInPlugin("com.survivalpack.mapdump", "SurvivalPack.MapDump", "0.3.0")]
     public class Plugin : BaseUnityPlugin
     {
         ConfigEntry<KeyboardShortcut> _key;
         ConfigEntry<bool> _auto;
         ConfigEntry<float> _autoDelay;
+        ConfigEntry<bool> _scan;
+        ConfigEntry<float> _scanCell;
+        ConfigEntry<int> _scanBudget;
+        bool _scanning;
         readonly HashSet<string> _done = new HashSet<string>();
         string _msg; float _msgUntil;
         float _worldSeenAt = -1;
@@ -46,7 +55,10 @@ namespace SurvivalPack.MapDump
             _key = Config.Bind("Dump", "Dump now", new KeyboardShortcut(KeyCode.F10, KeyCode.LeftControl), "Write this map's data now (in raid).");
             _auto = Config.Bind("Dump", "Dump automatically", true, "Write each map's data once per game session, a little after the raid loads.");
             _autoDelay = Config.Bind("Dump", "Seconds after load", 20f, "Wait this long after the raid world appears, so every door and container has loaded.");
-            Logger.LogInfo("SurvivalPack.MapDump 0.2.2 ready (Ctrl+F10 in raid)");
+            _scan = Config.Bind("Scan", "Scan buildings", true, "After the dump, sample the buildings with raycasts (floors, stairs, walls, ceilings) into scan.bin. Takes a minute or two; stay in the raid.");
+            _scanCell = Config.Bind("Scan", "Cell size (m)", 0.25f, "Distance between samples. 0.25 shows stairs and thin walls; 0.5 is four times faster.");
+            _scanBudget = Config.Bind("Scan", "Milliseconds per frame", 40, "How long the scan may run each frame. Higher is faster but the game stutters more.");
+            Logger.LogInfo("SurvivalPack.MapDump 0.3.0 ready (Ctrl+F10 in raid)");
         }
 
         UnityEngine.Object _world;
@@ -91,6 +103,7 @@ namespace SurvivalPack.MapDump
 
         void Dump(string map)
         {
+            if (_scanning) return; // finish the running scan first
             _done.Add(map);
             try
             {
@@ -106,7 +119,7 @@ namespace SurvivalPack.MapDump
                 int links = DumpLinks(Path.Combine(dir, "links.json"));
                 var meta = new StringBuilder("{");
                 Prop(meta, "map", map); meta.Append(',');
-                Prop(meta, "plugin", "0.2.2"); meta.Append(',');
+                Prop(meta, "plugin", "0.3.0"); meta.Append(',');
                 Prop(meta, "unity", Application.unityVersion); meta.Append(',');
                 Prop(meta, "game", Application.version); meta.Append(',');
                 Prop(meta, "scenes", string.Join(";", Enumerable.Range(0, SceneManager.sceneCount).Select(i => SceneManager.GetSceneAt(i).name))); meta.Append(',');
@@ -123,6 +136,7 @@ namespace SurvivalPack.MapDump
                 {
                     _navMissing.Remove(map);
                     Say($"Map dump for {map} written: {tris:N0} walk triangles, {doors} doors, {conts} containers, {exits} exits, {boxes + meshes:N0} wall/floor shapes. Folder: BepInEx/survivalpack-mapdump/{Safe(map)}");
+                    if (_scan.Value) StartCoroutine(Scan(dir, map));
                 }
             }
             catch (Exception e)
@@ -131,6 +145,145 @@ namespace SurvivalPack.MapDump
                 Say($"Map dump for {map} failed: {e.Message} (details in the BepInEx log)");
                 Logger.LogError(e);
             }
+        }
+
+        // ---------- building scan ----------
+        // SCN1: "SCN1", int version 1, float coarse cell (1 m), int k (fine cells per coarse side), float x0, float z0,
+        //       int cx, int cz; then cx*cz bytes: 1 = coarse cell scanned (a building, a bunker, anything that isn't
+        //       open ground); then for every scanned coarse cell in row-major order (z rows, x columns), its k*k fine
+        //       cells in row-major order, each: byte n, then n surfaces top to bottom: int16 height (cm), byte up
+        //       (normal.y: 0..255 = -1..1), byte flags (1 walkable, 2 solid 0.3-1.1 m above, 4 solid 1.5-2.1 m above,
+        //       8 terrain, 16 glass 1.0-1.8 m above).
+        // Fine cell (i, j) of coarse cell (a, b) is centred at x0 + a + (i + 0.5) / k, z0 + b + (j + 0.5) / k.
+        System.Collections.IEnumerator Scan(string dir, string map)
+        {
+            _scanning = true;
+            var path = Path.Combine(dir, "scan.bin");
+            var clock = System.Diagnostics.Stopwatch.StartNew(); var slice = System.Diagnostics.Stopwatch.StartNew();
+            var world = _world;
+            BinaryWriter w = null;
+            try
+            {
+                var nav = NavMesh.CalculateTriangulation(); var V = nav.vertices;
+                if (V.Length == 0) yield break;
+                float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
+                foreach (var v in V) { minX = Math.Min(minX, v.x); maxX = Math.Max(maxX, v.x); minZ = Math.Min(minZ, v.z); maxZ = Math.Max(maxZ, v.z); minY = Math.Min(minY, v.y); maxY = Math.Max(maxY, v.y); }
+                minX = Mathf.Floor(minX - 10); minZ = Mathf.Floor(minZ - 10); maxX += 10; maxZ += 10;
+                float top = maxY + 50, bottom = minY - 15;
+                int cx = Mathf.CeilToInt(maxX - minX), cz = Mathf.CeilToInt(maxZ - minZ);
+                int k = Math.Max(1, Mathf.RoundToInt(1f / Mathf.Clamp(_scanCell.Value, 0.1f, 1f)));
+                float fc = 1f / k, half = fc * 0.45f;
+                int mSurf = LayerMask.GetMask("LowPolyCollider", "Terrain", "Default");
+                int mWall = LayerMask.GetMask("LowPolyCollider", "Default");
+                int mGlass = LayerMask.GetMask("TransparentCollider");
+                const QueryTriggerInteraction NoTrig = QueryTriggerInteraction.Ignore;
+
+                // the lowest walk-map point in each coarse cell (finds tunnels and bunkers under the ground)
+                var navLow = new float[cx * cz];
+                for (int i = 0; i < navLow.Length; i++) navLow[i] = float.MaxValue;
+                void MarkNav(Vector3 p) { int a = (int)(p.x - minX), b = (int)(p.z - minZ); if (a >= 0 && b >= 0 && a < cx && b < cz) navLow[b * cx + a] = Math.Min(navLow[b * cx + a], p.y); }
+                foreach (var v in V) MarkNav(v);
+                var I = nav.indices;
+                for (int t = 0; t + 2 < I.Length; t += 3) MarkNav((V[I[t]] + V[I[t + 1]] + V[I[t + 2]]) / 3f);
+
+                // pass 1: which coarse cells have anything but open ground (first hit isn't the terrain, or the walk map
+                // runs more than 2 m under the first hit)
+                var mark = new bool[cx * cz];
+                for (int b = 0; b < cz; b++)
+                {
+                    for (int a = 0; a < cx; a++)
+                    {
+                        int i = b * cx + a;
+                        if (Physics.Raycast(new Vector3(minX + a + 0.5f, top, minZ + b + 0.5f), Vector3.down, out var hit, top - bottom, mSurf, NoTrig))
+                            mark[i] = !(hit.collider is TerrainCollider) || navLow[i] < hit.point.y - 2f;
+                        else mark[i] = navLow[i] != float.MaxValue;
+                    }
+                    if (slice.ElapsedMilliseconds > _scanBudget.Value)
+                    {
+                        if (world == null || (UnityEngine.Object)world == null) { Say($"Building scan for {map} stopped: the raid ended."); yield break; }
+                        Progress(map, 0.1f * b / cz, clock); yield return null; slice.Restart();
+                    }
+                }
+                // grow by 2 m so walls on the edge of a building are inside the scan
+                var grown = new bool[cx * cz]; int scanned = 0;
+                for (int b = 0; b < cz; b++)
+                    for (int a = 0; a < cx; a++)
+                    {
+                        bool any = false;
+                        for (int db = -2; db <= 2 && !any; db++)
+                            for (int da = -2; da <= 2 && !any; da++)
+                            {
+                                int aa = a + da, bb = b + db;
+                                if (aa >= 0 && bb >= 0 && aa < cx && bb < cz && mark[bb * cx + aa]) any = true;
+                            }
+                        grown[b * cx + a] = any; if (any) scanned++;
+                    }
+
+                w = new BinaryWriter(File.Create(path));
+                w.Write(Encoding.ASCII.GetBytes("SCN1")); w.Write(1); w.Write(1f); w.Write(k); w.Write(minX); w.Write(minZ); w.Write(cx); w.Write(cz);
+                foreach (var g in grown) w.Write((byte)(g ? 1 : 0));
+
+                // pass 2: every surface under each fine cell, and what stands on each floor
+                var ys = new short[16]; var ups = new byte[16]; var fls = new byte[16];
+                long surfaces = 0; int done = 0;
+                var hb = new Vector3(half, 0.4f, half); var hh = new Vector3(half, 0.3f, half);
+                for (int b = 0; b < cz; b++)
+                {
+                    for (int a = 0; a < cx; a++)
+                    {
+                        if (!grown[b * cx + a]) continue;
+                        for (int j = 0; j < k; j++)
+                            for (int i = 0; i < k; i++)
+                            {
+                                float x = minX + a + (i + 0.5f) * fc, z = minZ + b + (j + 0.5f) * fc, y = top;
+                                int n = 0;
+                                while (n < 16 && y > bottom && Physics.Raycast(new Vector3(x, y, z), Vector3.down, out var hit, y - bottom, mSurf, NoTrig))
+                                {
+                                    float hy = hit.point.y, ny = hit.normal.y; byte fl = 0;
+                                    if (hit.collider is TerrainCollider) fl |= 8;
+                                    if (ny > 0.6f)
+                                    {
+                                        fl |= 1;
+                                        if (Physics.CheckBox(new Vector3(x, hy + 0.7f, z), hb, Quaternion.identity, mWall, NoTrig)) fl |= 2;
+                                        if (Physics.CheckBox(new Vector3(x, hy + 1.8f, z), hh, Quaternion.identity, mWall, NoTrig)) fl |= 4;
+                                        else if (Physics.CheckBox(new Vector3(x, hy + 1.4f, z), hb, Quaternion.identity, mGlass, NoTrig)) fl |= 16;
+                                    }
+                                    ys[n] = (short)Mathf.Clamp(Mathf.RoundToInt(hy * 100f), short.MinValue, short.MaxValue);
+                                    ups[n] = (byte)Mathf.Clamp(Mathf.RoundToInt((ny + 1f) * 127.5f), 0, 255); fls[n] = fl; n++;
+                                    y = hy - 0.05f;
+                                }
+                                w.Write((byte)n);
+                                for (int q = 0; q < n; q++) { w.Write(ys[q]); w.Write(ups[q]); w.Write(fls[q]); }
+                                surfaces += n;
+                            }
+                        done++;
+                        if (slice.ElapsedMilliseconds > _scanBudget.Value)
+                        {
+                            if (world == null || (UnityEngine.Object)world == null) { w.Dispose(); w = null; File.Delete(path); Say($"Building scan for {map} stopped: the raid ended. Load the map again to finish it."); yield break; }
+                            Progress(map, 0.1f + 0.9f * done / Math.Max(1, scanned), clock); yield return null; slice.Restart();
+                        }
+                    }
+                }
+                w.Dispose(); w = null;
+                var info = new StringBuilder("{");
+                Prop(info, "map", map); info.Append(',');
+                info.Append($"\"cell\":{(1f / k).ToString(Inv)},\"k\":{k},\"x0\":{minX.ToString(Inv)},\"z0\":{minZ.ToString(Inv)},\"cx\":{cx},\"cz\":{cz},");
+                info.Append($"\"scannedCells\":{scanned},\"fineCells\":{(long)scanned * k * k},\"surfaces\":{surfaces},\"seconds\":{(int)clock.Elapsed.TotalSeconds}}}");
+                File.WriteAllText(Path.Combine(dir, "scan.json"), info.ToString());
+                Say($"Building scan for {map} written: {scanned:N0} m² of buildings, {surfaces:N0} surfaces, {(int)clock.Elapsed.TotalSeconds} s. You can leave the raid.");
+            }
+            finally
+            {
+                if (w != null) { w.Dispose(); try { File.Delete(path); } catch { } }
+                _scanning = false;
+            }
+        }
+
+        void Progress(string map, float f, System.Diagnostics.Stopwatch clock)
+        {
+            var left = f > 0.05f ? $", about {Mathf.CeilToInt((float)clock.Elapsed.TotalSeconds * (1 - f) / f)} s left" : "";
+            _msg = $"Scanning the buildings of {map}: {Mathf.FloorToInt(f * 100)}%{left}. Stay in the raid.";
+            _msgUntil = Time.realtimeSinceStartup + 5;
         }
 
         // ---------- navmesh ----------

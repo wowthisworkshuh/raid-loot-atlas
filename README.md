@@ -58,6 +58,7 @@ It only reads; nothing in the raid changes.
 2. Or build it yourself: install the [.NET SDK](https://dotnet.microsoft.com/download) and run `powershell -ExecutionPolicy Bypass -File kit\MapDump\build-mapdump.ps1 -Spt "C:\SPT"`.
 3. **Host the raid yourself** (Fika: Host raid without picking the headless, or play offline): the walk map only loads on the game that runs the AI, so a raid on the headless dumps everything except the walk map. Load into Factory first. When the box top-left says the dump was written, send the `BepInEx\survivalpack-mapdump\factory4_day` folder to Claude to check the format. Then do the other maps (Customs, Woods, Shoreline, Interchange, Lighthouse, Reserve, Labs, Labyrinth, Ground Zero). Ctrl+F10 writes it again.
 4. `build-mapdump.ps1 -Spt "C:\SPT" -Collect` zips every map's dump to your Desktop. `-Uninstall` removes the plugin.
+5. **Building scan (0.3.0):** after each dump the plugin samples the buildings every 25 cm with raycasts against the game's own collision (`scan.bin`): every floor, stair ramp and roof under each point, and whether a wall, furniture or glass stands on each floor. Raycasts reach the collision meshes the game doesn't keep readable, so this is the real layout inside buildings. It takes a minute or two per map with a progress box top-left; stay in the raid until it says the scan is written. Settings: `BepInEx\config\com.survivalpack.mapdump.cfg` (Scan).
 
 What it powers, once the dumps are in:
 
