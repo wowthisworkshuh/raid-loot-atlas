@@ -622,7 +622,7 @@ new ResizeObserver(resize).observe(stage);
 
 // ---------- data ----------
 // every push stamps BUILD, so browsers never mix a cached old file with a new one (Pages caches 10 min)
-const BUILD = "202611010349";
+const BUILD = "202611010355";
 { const f0 = window.fetch.bind(window);
   window.fetch = (u, o) => f0(typeof u === "string" && /^(data|maps)\//.test(u) ? u + (u.includes("?") ? "&" : "?") + "v=" + BUILD : u, o); }
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
@@ -2030,7 +2030,16 @@ function drawRun(legs, stops, sp, exitIdx, total, sum) {
   const s0 = toWorld(sp[0], sp[1] + 0.35, sp[2]), pts = [new THREE.Vector3(...s0)], legEnd = [];
   for (const l of legs) { for (const v of l.ns) { const p = P(v); if (pts[pts.length - 1].distanceTo(p) > 0.05) pts.push(p); } legEnd.push(pts.length - 1); }
   const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
-  RUNPATH = { pts, cum, total: cum[cum.length - 1], legEnd, groups: [] };
+  // indoors or out along the path: the walk graph's areas are ~2.5 m inside buildings and ~7 m on open ground,
+  // so short steps around a point mean you're inside (the follow camera closes in there and pulls back outside)
+  const ind = new Float32Array(pts.length);
+  for (let i = 0; i < pts.length; i++) {
+    let s = 0, n = 0;
+    for (let j = i - 1; j >= 0 && cum[i] - cum[j] < 12; j--) { s += cum[j + 1] - cum[j]; n++; }
+    for (let j = i; j < pts.length - 1 && cum[j] - cum[i] < 12; j++) { s += cum[j + 1] - cum[j]; n++; }
+    ind[i] = n && s / n < 4.2 ? 1 : 0;
+  }
+  RUNPATH = { pts, cum, ind, total: cum[cum.length - 1], legEnd, groups: [] };
   // flat ribbon, 0.8 m wide, drawn over everything like a GPS line
   const pos = [], hw = 0.4;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -2350,10 +2359,15 @@ function pathAt(d) {
   let lo = 0, hi = cum.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= d) lo = m; else hi = m; }
   const seg = cum[hi] - cum[lo] || 1; return pts[lo].clone().lerp(pts[hi], (d - cum[lo]) / seg);
 }
+function indoorAt(d) {
+  const { cum, ind } = RUNPATH; d = Math.max(0, Math.min(RUNPATH.total, d));
+  let lo = 0, hi = cum.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= d) lo = m; else hi = m; }
+  return ind[lo] + (ind[hi] - ind[lo]) * ((d - cum[lo]) / (cum[hi] - cum[lo] || 1));
+}
 function startWalk() {
   if (!RUNPATH || RUNPATH.total < 1) return;
   camAnim = null;
-  WALK = { d: 0, playing: true, fp: false, saved: { T: controls.target.clone(), P: camera.position.clone(), floor: floorSel, map: map.id }, cam: null, look: null, last: performance.now() };
+  WALK = { d: 0, playing: true, fp: false, saved: { T: controls.target.clone(), P: camera.position.clone(), floor: floorSel, map: map.id }, cam: null, look: null, z: null, last: performance.now() };
   controls.enabled = false;
   $("walkbar").hidden = false; document.querySelector(".help").hidden = true; $("walk-play").textContent = "Pause"; $("walk-view").setAttribute("aria-pressed", "false"); $("walk-view").textContent = "First person";
   $("walk-play").focus();
@@ -2375,7 +2389,14 @@ function walkFrame(now) {
   const dir = ahead.clone().sub(p); dir.y = 0; if (dir.lengthSq() < 1e-4) dir.set(0, 0, 1); dir.normalize();
   let cam, look;
   if (WALK.fp) { cam = p.clone().add(new THREE.Vector3(0, 1.35, 0)); look = ahead.clone().add(new THREE.Vector3(0, 1.2, 0)); }
-  else { cam = p.clone().addScaledVector(dir, -8).add(new THREE.Vector3(0, 6.5, 0)); look = p.clone().addScaledVector(dir, 5).add(new THREE.Vector3(0, 0.5, 0)); }
+  else {
+    // zoom: close behind you inside buildings (rooms and corridors stay readable), high and far back outside
+    // (you see the ground ahead); eased over a couple of seconds, looking a little ahead so doorways don't snap it
+    const zi = (indoorAt(WALK.d - 3) + indoorAt(WALK.d) + indoorAt(WALK.d + 6)) / 3;
+    WALK.z = WALK.z == null ? zi : WALK.z + (zi - WALK.z) * (1 - Math.exp(-dt * 1.4));
+    const z = WALK.z, back = 16 - 10.5 * z, up = 12 - 8.6 * z, ahead2 = 9 - 5 * z;
+    cam = p.clone().addScaledVector(dir, -back).add(new THREE.Vector3(0, up, 0)); look = p.clone().addScaledVector(dir, ahead2).add(new THREE.Vector3(0, 0.5, 0));
+  }
   const k = 1 - Math.exp(-dt * (WALK.fp ? 8 : 5)); // smooth out the zigzag of the walk graph
   WALK.cam = WALK.cam ? WALK.cam.lerp(cam, k) : cam; WALK.look = WALK.look ? WALK.look.lerp(look, k) : look;
   camera.position.copy(WALK.cam); controls.target.copy(WALK.look); camera.lookAt(WALK.look);
