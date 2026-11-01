@@ -16,6 +16,7 @@ Each map is a rough "dev blockout": grey grid boxes like an unfinished Source ma
 
 - **Loose loot.** Each spot's chance comes from simulating SPT 4.1's loose-loot draw 6,000 times per map with the pack's loot amount (SVM preset: 0.7 x SPT's default). "Expected per raid" is how many of that item you'd find loose on the whole map in an average raid, if you could check every spot.
 - **Containers.** The chance per container you open comes straight from SPT 4.1's container loot tables. Container positions aren't stored on the server (they live in the map files), so they show up on the map after the map export below.
+- An item that always spawns at one of a group of spots (the Labs residential keycard, the Labyrinth keys) counts once per raid, shared across its spots.
 - Items added by mods (Tushonka Rare Collectibles) aren't included yet.
 
 ## Status
@@ -26,10 +27,10 @@ Each map is a rough "dev blockout": grey grid boxes like an unfinished Source ma
 | Container loot odds | Done |
 | Loose-loot data matched to our server's exact SPT 4.1.6 files | To do: run `kit/collect-server-loot.ps1`, send the zip |
 | Rough 3D blockouts, extracts, transits and place names, 10 maps | Done |
-| Real map layouts from the map dump (walls, floors, stairs, walk map) | Factory done; other maps need a dump each |
-| Container positions on the map | Factory done (167 containers); others come with their dump |
-| Locked doors and My keys | Factory done: doors red without the key, green with it, orange breachable, grey sealed |
-| Loot runs, key values, suggested keys | To do: needs a Factory dump from a raid you host yourself (bot jump/door links) |
+| Real map layouts from the map dump (walls, floors, stairs, walk map) | Factory and Labs done; other maps need a dump each |
+| Container positions on the map | Factory and Labs done; others come with their dump |
+| Locked doors, My keys, key values, suggested keys, only-reachable loot | Factory and Labs done |
+| Loot runs | To do |
 | **Streets of Tarkov** | **To do** (biggest map; done last) |
 
 ## Map dump: walkable areas, locked doors, keys and containers (kit/MapDump)
@@ -54,7 +55,7 @@ What it powers, once the dumps are in:
 
 - **Loot run:** pick your spawn and the route goes through the top hotspots for your current loot search in the shortest possible order (solved exactly over the walkable map), then to whichever extract or transit finishes it shortest. Every extract is open from every spawn on this server and raids have no time limit, so only the path matters. The route lists the keys it needs at each locked door.
 - **My keys:** tell the map which keys you have. Doors show green if you have the key and red if you don't, and the loot glow and routes only use rooms you can get into.
-- **Key values:** for each key, what loot sits behind its doors on average per raid and what it's worth. The rooms behind a door are found by closing it on the walk map and seeing which loot gets cut off.
+- **Key values:** for each key, what loot its rooms add to what you can already reach, on average per raid, at handbook prices. Rooms come from `tools/build_reach.py`: the walk map's pieces joined through every unlocked door, with locked doors as gates between them. Rooms the walk map doesn't reach (some vaults have no bot walk map inside) show as "Rooms not mapped" and their loot always shows.
 - **Suggested keys:** the keys per map whose rooms are worth the most.
 - **Interior layouts:** walls traced round the edges of the walkable areas (every room, corridor and stairwell the bots can reach), filled in with the collision shapes, on the real terrain.
 

@@ -187,8 +187,13 @@ select { width: 100%; background: var(--raise); border: 1px solid var(--line); b
 .key i { width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--faint); display: grid; place-items: center; font-style: normal; font-size: 10px; }
 .key[aria-pressed="true"] { border-color: var(--door-ok); }
 .key[aria-pressed="true"] i { background: var(--door-ok); border-color: var(--door-ok); color: var(--bg); }
-.key .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.key .d { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 11px; }
+.key .n { min-width: 0; }
+.key .d { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 11px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.key .n { display: flex; flex-direction: column; gap: 2px; }
+.key .n > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.key .n small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: normal; }
+.key .best { font-weight: 600; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--glow); }
+#reach-row { margin-bottom: 8px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); margin-top: 8px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 10px; height: 10px; border-radius: 2px; background: var(--c); }
@@ -276,6 +281,7 @@ body { margin: 0; }
 
       <section id="keys-sec" hidden>
         <p class="label">My keys</p>
+        <div class="toggles" id="reach-row" hidden><button class="chip" id="reach-only" aria-pressed="true" style="--c: var(--door-ok)"><i></i>Only loot I can reach</button></div>
         <div class="keys" id="keys"></div>
         <p class="note" id="keys-note"></p>
       </section>
@@ -400,18 +406,24 @@ const glowMat = new THREE.ShaderMaterial({
       gl_FragColor = vec4(mix(glow, hot, core) * (halo * a + core * 0.9), 1.0); }`,
 });
 
+// containers: small diamonds, sized by screen distance only a little, never additive, so stacked shelves
+// don't burn white and bury the loose-loot glow. Filled when the search can be in it, an outline when not.
 const contMat = new THREE.ShaderMaterial({
-  uniforms, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+  uniforms, transparent: true, depthWrite: false, depthTest: false,
   vertexShader: `attribute float aRel; uniform float uYMin, uYMax, uScale; varying float vRel; varying float vIn;
     void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vRel = aRel;
       vIn = step(uYMin, position.y) * step(position.y, uYMax);
-      gl_Position = projectionMatrix * mv; float meters = 2.5 + 8.0 * sqrt(aRel);
-      gl_PointSize = vIn * clamp(meters * uScale / -mv.z, 5.0, 90.0); }`,
+      gl_Position = projectionMatrix * mv; float has = step(0.0001, aRel);
+      float meters = 0.7 + 1.1 * sqrt(aRel);
+      gl_PointSize = vIn * clamp(meters * uScale / -mv.z, 5.0 + 4.0 * has, 9.0 + 13.0 * sqrt(aRel)); }`,
   fragmentShader: `varying float vRel; varying float vIn; void main(){ if (vIn < 0.5) discard;
       vec2 q = abs(gl_PointCoord - 0.5) * 2.0; float d = q.x + q.y; if (d > 1.0) discard;
-      float edge = smoothstep(1.0, 0.8, d) - smoothstep(0.75, 0.55, d) * (1.0 - step(0.0001, vRel));
-      float fill = step(0.0001, vRel) * exp(-d * d * 3.0) * (0.35 + 0.65 * sqrt(vRel));
-      gl_FragColor = vec4(vec3(0.44, 0.72, 0.79) * (edge * 0.6 + fill), 1.0); }`,
+      float has = step(0.0001, vRel);
+      float ring = step(0.72, d);
+      float a = ring * (0.45 + 0.4 * has) + (1.0 - ring) * has * (0.25 + 0.6 * sqrt(vRel));
+      if (a < 0.02) discard;
+      vec3 c = mix(vec3(0.36, 0.62, 0.70), vec3(0.62, 0.90, 1.0), has * sqrt(vRel));
+      gl_FragColor = vec4(c, a); }`,
 });
 
 function resize() {
@@ -463,6 +475,7 @@ async function loadMap(id) {
   contData = null; if (contPts) { scene.remove(contPts); contPts.geometry.dispose(); contPts = null; }
   loadModel(id);
   loadContainers(id);
+  loadReach(id);
   $("loading").hidden = true;
   refresh();
 }
@@ -782,7 +795,7 @@ function buildDoors(dump) {
     const cy = base + 1.1;
     const c = corners.map(([a, b, e]) => toWorld(d.c[0] + a * h[0], cy + b * h[1], d.c[2] + e * h[2]));
     for (const f of faces) for (const k of [f[0], f[1], f[2], f[0], f[2], f[3]]) pos.push(...c[k]);
-    if (d.state === "Locked" && d.t !== "trunk") { mpos.push(...toWorld(d.c[0], base + 2.8, d.c[2])); mcol.push(0, 0, 0); }
+    if (d.state === "Locked" && d.key) { mpos.push(...toWorld(d.c[0], base + 2.8, d.c[2])); mcol.push(0, 0, 0); }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -806,11 +819,67 @@ function colorDoors() {
   c.needsUpdate = true;
   if (doorMarks) {
     const mc = doorMarks.geometry.attributes.color; let j = 0;
-    for (const d of doorList) if (d.state === "Locked" && d.t !== "trunk") { tmp.set(DOOR_COL[doorStatus(d)]); mc.setXYZ(j++, tmp.r, tmp.g, tmp.b); }
+    for (const d of doorList) if (d.state === "Locked" && d.key) { tmp.set(DOOR_COL[doorStatus(d)]); mc.setXYZ(j++, tmp.r, tmp.g, tmp.b); }
     mc.needsUpdate = true;
   }
 }
+// ---------- rooms behind doors (maps/<id>-reach.json from tools/build_reach.py) ----------
+let REACH = null, ptOK = null, ctOK = null;
+let ONLY_REACH = true;
+try { ONLY_REACH = localStorage.getItem("atlas-only-reach") !== "0"; } catch {}
+async function loadReach(id) {
+  REACH = null; ptOK = null; ctOK = null;
+  try {
+    const r = await fetch(`maps/${id}-reach.json`); if (!r.ok) { renderKeys(); return; }
+    const R = await r.json(); if (map.id !== id) return;
+    R.adj = new Map();
+    for (const g of R.gates) for (const x of g.slice(0, 2)) { if (!R.adj.has(x)) R.adj.set(x, []); R.adj.get(x).push(g); }
+    R.keyed = new Set(R.gates.filter((g) => g[4] === "key").map((g) => g[3]));
+    REACH = R; applyReach(); refresh();
+  } catch (e) { console.error(e); }
+}
+function reachRooms(keys) {
+  const ok = new Set(REACH.start), st = [...REACH.start];
+  while (st.length) {
+    const x = st.pop();
+    for (const g of REACH.adj.get(x) || []) {
+      if (g[4] === "sealed" || (g[4] === "key" && !keys.has(g[3]))) continue;
+      const y = g[0] === x ? g[1] : g[0];
+      if (!ok.has(y)) { ok.add(y); st.push(y); }
+    }
+  }
+  return ok;
+}
+const roomOK = (ok, r) => r < 0 || ok.has(r);
+function applyReach() {
+  if (!REACH || !ONLY_REACH) { ptOK = null; ctOK = null; return; }
+  const ok = reachRooms(MY_KEYS);
+  ptOK = Uint8Array.from(REACH.pt, (r) => roomOK(ok, r) ? 1 : 0);
+  ctOK = ok;
+}
+const ctOKAt = (id) => !ctOK || roomOK(ctOK, REACH.ct[id] ?? -1);
+// average loot worth per spot / container, all items (handbook prices)
+function spotWorth() {
+  if (!map.pv) map.pv = map.byPoint.map((arr) => arr.reduce((s, [t, c]) => s + c * (ITEMS[t]?.[3] || 0), 0));
+  return map.pv;
+}
+function contWorth(c) {
+  const [tpl, spawn] = map.containers.ids[c.id]; map.cvCache ||= {};
+  if (map.cvCache[tpl] == null) { const o = map.containers.odds[tpl] || {}; map.cvCache[tpl] = Object.entries(o).reduce((s, [t, p]) => s + p * (ITEMS[t]?.[3] || 0), 0); }
+  return spawn * map.cvCache[tpl];
+}
+// what a key adds to the rooms you can already reach
+function keyValue(k) {
+  const without = new Set(MY_KEYS); without.delete(k);
+  const a = reachRooms(without), b = reachRooms(new Set([...without, k]));
+  const pv = spotWorth(); let v = 0, n = 0, nc = 0;
+  REACH.pt.forEach((r, i) => { if (r >= 0 && b.has(r) && !a.has(r)) { v += pv[i]; n++; } });
+  for (const c of contData || []) { const r = REACH.ct[c.id] ?? -1; if (r >= 0 && b.has(r) && !a.has(r)) { v += contWorth(c); nc++; } }
+  return { v, n, nc };
+}
+const shortKey = (n) => { const t = n.replace(/^TerraGroup Labs /, "").trim(); return t.charAt(0).toUpperCase() + t.slice(1); };
 function renderKeys(dump) {
+  dump ||= map && blockCache[MODEL_OF[map.id] || map.id]?.dump;
   const keys = new Map();
   for (const d of dump?.doors || []) if (d.key && d.state === "Locked") {
     const k = keys.get(d.key) || { name: d.keyName || d.key, price: d.keyPrice, doors: 0 };
@@ -818,12 +887,19 @@ function renderKeys(dump) {
   }
   $("keys-sec").hidden = !dump;
   if (!dump) return;
-  $("keys").innerHTML = keys.size ? [...keys].sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, k]) =>
-    `<button class="key" data-k="${id}" aria-pressed="${MY_KEYS.has(id)}"><i>${MY_KEYS.has(id) ? "✓" : ""}</i><span class="n" title="${esc(k.name)}">${esc(k.name)}</span><span class="d">${k.doors} door${k.doors > 1 ? "s" : ""}</span></button>`).join("")
+  const rows = [...keys].map(([id, k]) => ({ id, ...k, val: REACH && REACH.keyed.has(id) ? keyValue(id) : null }));
+  rows.sort((a, b) => (b.val?.v ?? -1) - (a.val?.v ?? -1) || a.name.localeCompare(b.name));
+  const best = new Set(rows.filter((r) => !MY_KEYS.has(r.id) && r.val && r.val.v > 0).slice(0, 3).map((r) => r.id));
+  const sub = (r, top) => !REACH ? "" : !r.val ? `<small title="The rooms behind it aren't on the game's walk map, so its loot is always shown">Rooms not mapped</small>`
+    : `<small>${top ? `<b class="best">Suggested</b> · ` : ""}${r.val.v > 0 ? `${fmtRub(Math.round(r.val.v))} a raid` : "No loot found behind it"}${r.val.n ? ` · ${r.val.n} spot${r.val.n > 1 ? "s" : ""}` : ""}${r.val.nc ? ` · ${r.val.nc} container${r.val.nc > 1 ? "s" : ""}` : ""}</small>`;
+  $("keys").innerHTML = rows.length ? rows.map((r) =>
+    `<button class="key" data-k="${r.id}" aria-pressed="${MY_KEYS.has(r.id)}"><i>${MY_KEYS.has(r.id) ? "✓" : ""}</i><span class="n"><span title="${esc(r.name)}">${esc(shortKey(r.name))}</span>${sub(r, best.has(r.id))}</span><span class="d">${r.doors} door${r.doors > 1 ? "s" : ""}</span></button>`).join("")
     : `<p class="empty">No keyed doors on this map.</p>`;
+  $("reach-row").hidden = !REACH;
+  $("reach-only").setAttribute("aria-pressed", String(ONLY_REACH));
   const counts = { need: 0, ok: 0, breach: 0, sealed: 0 };
   for (const d of doorList) { const s = doorStatus(d); if (s in counts) counts[s]++; }
-  $("keys-note").innerHTML = `<span class="legend">
+  $("keys-note").innerHTML = (REACH ? `Tick the keys you have. Each key's value is the loot its rooms add to what you can already reach, on average per raid (handbook prices). ` : "") + `<span class="legend">
     <span style="--c: var(--door-need)"><i></i>No key (${counts.need})</span><span style="--c: var(--door-ok)"><i></i>Have key (${counts.ok})</span>
     <span style="--c: var(--door-breach)"><i></i>Breachable (${counts.breach})</span><span style="--c: var(--faint)"><i></i>Sealed (${counts.sealed})</span></span>`;
 }
@@ -831,7 +907,11 @@ $("keys").addEventListener("click", (e) => {
   const b = e.target.closest(".key"); if (!b) return;
   const k = b.dataset.k; MY_KEYS.has(k) ? MY_KEYS.delete(k) : MY_KEYS.add(k);
   try { localStorage.setItem("atlas-keys", JSON.stringify([...MY_KEYS])); } catch {}
-  colorDoors(); renderKeys(blockCache[MODEL_OF[map.id] || map.id]?.dump);
+  colorDoors(); applyReach(); refresh();
+});
+$("reach-only").addEventListener("click", () => {
+  ONLY_REACH = !ONLY_REACH; try { localStorage.setItem("atlas-only-reach", ONLY_REACH ? "1" : "0"); } catch {}
+  applyReach(); refresh();
 });
 
 // ---------- extracts + place names ----------
@@ -971,7 +1051,7 @@ function refresh() {
   chanceAt = new Float32Array(map.points.length);
   map.byPoint.forEach((arr, i) => {
     let miss = 1; for (const [tpl, c] of arr) if (set.has(tpl)) miss *= 1 - c;
-    chanceAt[i] = 1 - miss;
+    chanceAt[i] = (1 - miss) * (ptOK ? ptOK[i] : 1);
   });
   let cmax = 0; for (const v of chanceAt) cmax = Math.max(cmax, v);
   const rel = glowPts.geometry.attributes.aRel;
@@ -983,7 +1063,7 @@ function refresh() {
     contData.forEach((c, i) => {
       const [tpl, spawn] = map.containers.ids[c.id]; const o = odds[tpl] || {};
       let miss = 1; for (const t of set) if (o[t]) miss *= 1 - o[t];
-      contChance[i] = spawn * (1 - miss);
+      contChance[i] = spawn * (1 - miss) * (ctOKAt(c.id) ? 1 : 0);
     });
     let m2 = 0; for (const v of contChance) m2 = Math.max(m2, v);
     const ra = contPts.geometry.attributes.aRel;
@@ -994,6 +1074,7 @@ function refresh() {
   renderSelection(active, cand);
   renderList(cand);
   renderContainers(set);
+  renderKeys();
 }
 
 function renderSelection(active, cand) {

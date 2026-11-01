@@ -118,8 +118,20 @@ def build_map(mid, loose, rng):
             L["items"][tpl] = L["items"].get(tpl, 0) + p * s
     for sp, p in zip(rand_pts, p_rand):
         add(sp, float(p))
+    # An always-spawn item with group positions spawns once, at one of its group's spots (SPT picks one
+    # position, weighted), not at every spot: share the one spawn across the group by each spot's weight.
+    grp = {}
     for sp in fixed_pts:
-        add(sp, 1.0)
+        t = sp["template"]
+        if t.get("IsGroupPosition") and not sp.get("forced"):
+            grp.setdefault(t.get("Id", ""), []).append(sp)
+    for sp in fixed_pts:
+        g = grp.get(sp["template"].get("Id", ""))
+        if g and len(g) > 1 and sp in g:
+            tot = sum(x["probability"] for x in g) or len(g)
+            add(sp, (sp["probability"] or 1) / tot)
+        else:
+            add(sp, 1.0)
 
     cov = [sum(item_shares(sp).values()) for sp in rand_pts + fixed_pts]
     unmatched = sum(1 for c in cov if c < 0.99)

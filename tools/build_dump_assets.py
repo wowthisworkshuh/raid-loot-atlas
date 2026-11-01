@@ -115,7 +115,11 @@ def main():
         p = np.array(e["pos"]); t = e["type"].split(".")[-1]
         kind = "s" if t.startswith("Scav") else "p"
         best = min(tdev, key=lambda n: np.linalg.norm(n[1] - p), default=None)
-        name = best[0] if best is not None and np.linalg.norm(best[1] - p) < 6 else (e.get("exitName") or e["name"])
+        raw = e.get("exitName") or e["name"]
+        clean = raw.split("_", 1)[1] if raw.lower().startswith(("lab_", "factory_", "fact_")) else raw
+        clean = clean.replace("_", " ").strip()
+        same = next((n for n, _ in tdev if n.lower() == clean.lower()), None)
+        name = best[0] if best is not None and np.linalg.norm(best[1] - p) < 6 else (same or clean)
         if t == "SecretExfiltrationPoint":
             name += " (secret)"
         exits.append({"n": name, "k": kind, "x": round(p[0], 2), "y": round(p[1], 2), "z": round(p[2], 2)})
