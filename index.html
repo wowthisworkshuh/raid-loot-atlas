@@ -204,6 +204,16 @@ input[type=range] { accent-color: var(--khaki); }
 .walkbar #walk-play { min-width: 64px; background: var(--route); color: #160612; border-color: var(--route); font-weight: 700; }
 .walkbar select { width: auto; padding: 5px 6px; font-size: 13px; }
 .rpin.start { background: var(--bg); color: var(--fg); border: 1.5px solid var(--fg); font-weight: 700; }
+.link-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.link-st { font-size: 12.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; }
+.link-st::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.link-st[data-s="off"] { display: none; }
+.link-st[data-s="live"]::before { background: var(--exit-pmc); }
+.link-st[data-s="raid"]::before { background: var(--route); box-shadow: 0 0 0 3px color-mix(in srgb, var(--route) 30%, transparent); }
+.link-here { align-self: flex-start; }
+.you { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; pointer-events: none; }
+.you svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 0 2px rgba(0,0,0,.8)); }
+.you span { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 4px; font-size: 11px; font-weight: 700; color: var(--fg); text-shadow: 0 0 3px #000, 0 0 3px #000; white-space: nowrap; }
 .run-keys { margin-top: 12px; font-size: 13px; }
 .run-keys b { color: var(--door-need); font-weight: 600; }
 .toggles { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -381,6 +391,12 @@ input[type=range] { accent-color: var(--khaki); }
               <h3><span class="num">1</span><span class="q">Where do you spawn?</span></h3>
               <select id="run-spawn" aria-label="Spawn"></select>
               <p class="note">Or click a green (PMC) or purple (Scav) spawn dot on the map.</p>
+              <div class="link-row">
+                <button class="chip" id="link-btn" aria-pressed="false">Link to my game</button>
+                <span class="link-st" id="link-st" data-s="off"></span>
+              </div>
+              <button class="chip link-here" id="link-here" hidden></button>
+              <p class="note" id="link-note"></p>
             </li>
             <li class="pstep">
               <h3><span class="num">2</span><span class="q">What are you after?</span><span class="pick" id="ps-what"></span></h3>
@@ -432,6 +448,7 @@ input[type=range] { accent-color: var(--khaki); }
     <div class="marks" id="marks"></div>
     <div class="labels" id="labels"></div>
     <div class="labels" id="runmarks"></div>
+    <div class="labels"><div class="you" id="you" hidden><svg viewBox="-12 -12 24 24" aria-hidden="true"><circle r="10" fill="rgba(13,15,14,.72)" stroke="#fff" stroke-width="1.6"/><path d="M0 -7.5 5.2 5 0 2.2 -5.2 5z" fill="var(--route)"/></svg><span>You</span></div></div>
     <div class="hud" id="hud"></div>
     <button class="layers-btn" id="layers-btn" aria-expanded="false" aria-controls="layers"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>Layers</button>
     <div class="float layers" id="layers" hidden>
@@ -605,7 +622,7 @@ new ResizeObserver(resize).observe(stage);
 
 // ---------- data ----------
 // every push stamps BUILD, so browsers never mix a cached old file with a new one (Pages caches 10 min)
-const BUILD = "202611010317";
+const BUILD = "202611010338";
 { const f0 = window.fetch.bind(window);
   window.fetch = (u, o) => f0(typeof u === "string" && /^(data|maps)\//.test(u) ? u + (u.includes("?") ? "&" : "?") + "v=" + BUILD : u, o); }
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
@@ -1768,7 +1785,9 @@ async function loadPaths(id) {
     PG = { n, pos, w, door, off: deg, nb, ne };
     PJ = j;
     $("run-sec").hidden = false;
-    renderRunForm(); buildSpawnPts(); fillRunItems(); renderPlanner();
+    if (GAME.from && GAME.from.map === id) RUN.spawn = -2;
+    renderRunForm(); buildSpawnPts(); fillRunItems(); renderPlanner(); setLinkSt();
+    if (RUN.spawn === -2) scheduleRun();
   } catch (e) { console.error(e); }
 }
 // doors you'd have to get a key for cost as much as an 80 m detour, breaching 10 m: the route only uses them
@@ -1823,14 +1842,17 @@ function runPlaces() {
     h.val += val; h.slots += slots; h.cnt += cnt; h.miss *= 1 - p; h.members.push(member);
     if (val > h.best) { h.best = val; h.node = node; h.x = x; h.y = y; h.z = z; }
   };
+  const passed = RUN.spawn === -2 && GAME.from?.replan ? trailCells() : null;
+  const near = (x, y, z) => passed && passed.has(`${Math.floor(x / 3)},${Math.floor(y / 2.5)},${Math.floor(z / 3)}`);
   for (let i = 0; i < map.points.length; i++) {
     if (ptOK && !ptOK[i]) continue;
+    if (passed) { const pt = map.points[i]; if (near(pt[0], pt[1], pt[2])) continue; }
     let val = 0, sl = 0, cnt = 0;
     for (const [t, c] of map.byPoint[i]) if (set.has(t)) { const m = ITEMS[t]; val += c * (m?.[3] || 0); sl += c * (m?.[4] || 1); cnt += c; }
     const pt = map.points[i]; add(pt[0], pt[1], pt[2], PJ.pt[i] ?? -1, val, sl, cnt, chanceAt[i], ["s", i]);
   }
   if (contChance) contData.forEach((c, i) => {
-    if (!contChance[i]) return;
+    if (!contChance[i] || near(c.x, c.y, c.z)) return;
     const [tpl, spawn] = map.containers.ids[c.id], o = map.containers.odds[tpl] || {};
     let val = 0, sl = 0, cnt = 0;
     for (const t of set) if (o[t]) { const m = ITEMS[t], q = spawn * o[t]; val += q * (m?.[3] || 0); sl += q * (m?.[4] || 1); cnt += q; }
@@ -1886,9 +1908,10 @@ function distancesFrom(src, keys, targets) {
 }
 function solveRun() {
   clearRun();
-  if (!PG || RUN.spawn < 0) { renderRunOut(null); return; }
-  const sp = PJ.sp[RUN.spawn], start = sp[3];
-  if (start < 0) { renderRunOut({ err: "This spawn isn't on the walk map." }); return; }
+  const sp = PG ? runStart() : null;
+  if (!sp) { renderRunOut(null); return; }
+  const start = sp[3];
+  if (start < 0) { renderRunOut({ err: RUN.spawn === -2 ? "Where you are isn't on the walk map (too far from anywhere you can walk)." : "This spawn isn't on the walk map." }); return; }
   $("run-sum").innerHTML = "working…";
   const keys = MY_KEYS, goal = RUN.goal, target = goalTarget(goal, RUN.t[goal]);
   const exits = map.exitsForRun || [], exitNodes = exits.map((e) => e[1]);
@@ -2019,7 +2042,7 @@ function drawRun(legs, stops, sp, exitIdx, total, sum) {
   // markers: start, numbered stops, doors with their keys, the extract
   const dump = blockCache[MODEL_OF[map.id] || map.id]?.dump, ex = dump?.exits?.[exitIdx];
   const mark = (p, html, cls) => { const el = document.createElement("div"); el.className = "rpin " + (cls || ""); el.innerHTML = html; $("runmarks").appendChild(el); runMarks.push({ el, p }); };
-  mark(new THREE.Vector3(...s0).setY(s0[1] + 1.2), "Start", "start");
+  if (RUN.spawn !== -2 || !GAME.d?.inRaid) mark(new THREE.Vector3(...s0).setY(s0[1] + 1.2), "Start", "start"); // linked: the You arrow marks it
   // locations: consecutive places in the same named place and floor
   const groups = [];
   stops.forEach((p, i) => { const loc = placeLoc(p), g = groups[groups.length - 1];
@@ -2035,7 +2058,7 @@ function drawRun(legs, stops, sp, exitIdx, total, sum) {
   });
   const groupAt = new Map(groups.map((g) => [g.first, g]));
   const steps = [], keysNeeded = new Map();
-  steps.push({ t: "start", label: `Spawn ${spawnName(RUN.spawn)}`, focus: { x: sp[0], y: sp[1], z: sp[2], r: 22 } });
+  steps.push({ t: "start", label: sp[4], focus: { x: sp[0], y: sp[1], z: sp[2], r: 22 } });
   legs.forEach((l, li) => {
     for (const e of l.es) {
       const d = PG.door[e]; if (d < 0) continue;
@@ -2056,6 +2079,21 @@ function drawRun(legs, stops, sp, exitIdx, total, sum) {
   RUNSTEPS = steps; total = RUNPATH.total; // real metres walked (the planner's door costs aren't distance)
   renderRunOut({ total, steps, keysNeeded, sum });
 }
+// where the route starts: [x, y, z, walk node, label]. RUN.spawn >= 0 is a spawn point, -2 is the game link's
+// spot (your spawn when the raid started, or where you stood when you re-planned)
+function runStart() {
+  if (RUN.spawn >= 0) { const s = PJ.sp[RUN.spawn]; return s ? [s[0], s[1], s[2], s[3], `Spawn ${spawnName(RUN.spawn)}`] : null; }
+  if (RUN.spawn === -2 && GAME.from && GAME.from.map === map.id) { const f = GAME.from; return [f.x, f.y, f.z, nearestNode(f.x, f.y, f.z), f.label]; }
+  return null;
+}
+function nearestNode(x, y, z) {
+  let best = -1, bd = 25;
+  for (let i = 0; i < PG.n; i++) {
+    const dy = PG.pos[i * 3 + 1] - y, d = Math.hypot(PG.pos[i * 3] - x, PG.pos[i * 3 + 2] - z) + (dy > 0.8 ? 4 : 1.5) * Math.abs(dy); // prefer the floor you stand on
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
 function spawnName(i) {
   const s = PJ.sp[i], B = blockCache[MODEL_OF[map.id] || map.id];
   let best = null, bd = 160;
@@ -2073,14 +2111,15 @@ function renderRunForm() {
     return [rep, `${nm}${ids.length > 1 ? ` · ${ids.length} spawns` : ""}`];
   });
   map.spawnOpts = new Set(opts.map((o) => o[0]));
-  $("run-spawn").innerHTML = `<option value="-1">Choose a spawn</option>` + opts.map(([i, label]) => `<option value="${i}">${esc(label)}</option>`).join("")
+  const gOpt = GAME.from && GAME.from.map === map.id ? `<option value="-2">${esc(GAME.from.label)}</option>` : "";
+  $("run-spawn").innerHTML = `<option value="-1">Choose a spawn</option>` + gOpt + opts.map(([i, label]) => `<option value="${i}">${esc(label)}</option>`).join("")
     + (RUN.spawn >= 0 && !map.spawnOpts.has(RUN.spawn) ? `<option value="${RUN.spawn}">Spawn you clicked, ${esc(spawnName(RUN.spawn))}</option>` : "");
   $("run-spawn").value = String(RUN.spawn);
   renderGoal();
   $("run-anykey").setAttribute("aria-pressed", String(RUN.anyKey));
   // the exits a run can end at: all of them (every extract is open from every spawn on this server)
   map.exitsForRun = (PJ.ex || []).map((node, i) => [i, node]).filter(([, node]) => node >= 0);
-  if (RUN.spawn < 0) renderRunOut(null);
+  if (RUN.spawn === -1) renderRunOut(null);
 }
 function renderRunOut(r) {
   const sum = $("run-sum");
@@ -2111,7 +2150,7 @@ function renderRunOut(r) {
       : `<p class="note">${esc(what)} on ${esc(map.name)} averages ${fmtRub(Math.round(S.avail))} per raid if you check every spot you can reach. Getting ${fmtRub(target)} means checking nearly all of them, so this route goes for the part that's worth the walk.</p>`;
   const blocked = S.blockedVal >= (goal === "count" ? 0.01 : 5000) ? `<p class="note">Another ${goal === "count" ? (S.blockedVal < 1 ? S.blockedVal.toFixed(2) : S.blockedVal.toFixed(1)) + " " + esc(what) : fmtRub(Math.round(S.blockedVal))} on average sits behind doors you can't open. Tick the keys you have in step 4, or plan through doors you don't have keys for.</p>` : "";
   const totals = [
-    `<div><b>${Math.round(r.total)} m</b><span>walk, spawn to extract</span></div>`,
+    `<div><b>${Math.round(r.total)} m</b><span>walk, start to extract</span></div>`,
     goal === "count" ? `<div><b>${fmtOdds(S.pAny)}</b><span>you find at least one</span></div>` : `<div><b>~${fmtRub(Math.round(S.val))}</b><span>loot on an average raid</span></div>`,
     goal === "value" ? `<div><b>${Math.round(S.slots)} / ${S.cap}</b><span>slots filled on average</span></div>` : `<div><b>${S.cnt < 1 ? S.cnt.toFixed(2) : S.cnt < 10 ? S.cnt.toFixed(1) : Math.round(S.cnt)}</b><span>found on an average raid</span></div>`,
   ].join("");
@@ -2127,7 +2166,7 @@ function buildSpawnPts() {
   g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.setAttribute("aOn", new THREE.Float32BufferAttribute(on, 1));
   spawnPts = new THREE.Points(g, exitDotMat); spawnPts.renderOrder = 5; spawnPts.visible = TAB === "run"; scene.add(spawnPts);
 }
-function scheduleRun() { if (PJ) renderGoal(); clearTimeout(runTimer); if (PG && RUN.spawn >= 0) { $("run-sum").innerHTML = "working…"; runTimer = setTimeout(solveRun, 200); } }
+function scheduleRun() { if (PJ) renderGoal(); clearTimeout(runTimer); if (PG && RUN.spawn !== -1) { $("run-sum").innerHTML = "working…"; runTimer = setTimeout(solveRun, 200); } }
 function saveRun() { try { localStorage.setItem("atlas-run", JSON.stringify({ goal: RUN.goal, t: RUN.t, anyKey: RUN.anyKey })); } catch {} }
 function renderGoal() {
   const g = GOALS[RUN.goal], el = $("run-t");
@@ -2142,6 +2181,86 @@ $("run-spawn").addEventListener("change", () => { RUN.spawn = +$("run-spawn").va
 $("run-t").addEventListener("input", () => { RUN.t[RUN.goal] = +$("run-t").value; $("run-t-o").textContent = GOALS[RUN.goal].fmt(RUN.t[RUN.goal]); saveRun(); scheduleRun(); });
 $("run-goal").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; RUN.goal = b.dataset.g; renderGoal(); saveRun(); scheduleRun(); });
 $("run-anykey").addEventListener("click", () => { RUN.anyKey = !RUN.anyKey; $("run-anykey").setAttribute("aria-pressed", String(RUN.anyKey)); saveRun(); renderPlanner(); scheduleRun(); });
+
+// ---------- link to the game: the SurvivalPack.AtlasLink plugin answers on this PC ----------
+// When a raid starts the planner switches to that map and plans from your real spawn; "Re-plan from where I
+// am" starts from where you stand and leaves out places you've walked right past this raid.
+const LINK_URL = "http://127.0.0.1:47320/raid";
+const GAME = { on: false, d: null, raid: null, from: null, timer: 0, fails: 0, trail: [], show: null };
+try { GAME.on = localStorage.getItem("atlas-link") === "1"; } catch {}
+const mapName = (id) => GROUPS.find((g) => g.ids.includes(id))?.name || id;
+const onAtlas = (id) => !!SLUG[id] && id !== "tarkovstreets";
+async function pollGame() {
+  clearTimeout(GAME.timer); if (!GAME.on) return;
+  let d = null;
+  try { const r = await fetch(LINK_URL, { cache: "no-store" }); if (r.ok) d = await r.json(); } catch {}
+  if (!GAME.on) return;
+  if (d && d.app === "atlaslink") { GAME.fails = 0; onGame(d); } else { GAME.fails++; GAME.d = null; setLinkSt(); }
+  GAME.timer = setTimeout(pollGame, d ? (d.inRaid ? 500 : 2000) : Math.min(5000, 1500 + GAME.fails * 500));
+}
+function onGame(d) {
+  GAME.d = d;
+  if (d.inRaid && d.map && d.raid && d.raid !== GAME.raid && d.spawn) { // a new raid: plan from its spawn
+    GAME.raid = d.raid; GAME.trail = []; GAME.show = null;
+    GAME.from = { map: d.map, x: d.spawn[0], y: d.spawn[1], z: d.spawn[2], label: "Your spawn (from the game)" };
+    if (onAtlas(d.map)) {
+      showTab("run");
+      if (map?.id !== d.map) go(d.map); // loadPaths takes the spawn once the map's walk data is in
+      else if (PJ) { RUN.spawn = -2; renderRunForm(); scheduleRun(); }
+    }
+  }
+  if (d.inRaid && d.pos) { const t = GAME.trail, l = t[t.length - 1]; if (!l || Math.hypot(l[0] - d.pos[0], l[2] - d.pos[2]) > 1.5 || Math.abs(l[1] - d.pos[1]) > 1.5) t.push(d.pos.slice()); }
+  setLinkSt();
+}
+function trailCells() {
+  const s = new Set();
+  for (const [x, y, z] of GAME.trail) { const cx = Math.floor(x / 3), cy = Math.floor(y / 2.5), cz = Math.floor(z / 3);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) s.add(`${cx + a},${cy},${cz + b}`); }
+  return s;
+}
+function setLinkSt() {
+  const st = $("link-st"), d = GAME.d, here = $("link-here");
+  $("link-btn").setAttribute("aria-pressed", String(GAME.on));
+  here.hidden = true;
+  if (!GAME.on) { st.dataset.s = "off"; st.textContent = "";
+    $("link-note").innerHTML = "With the <b>AtlasLink</b> plugin in your game, the planner picks up your spawn when a raid starts and can re-plan from where you stand."; return; }
+  if (!d) { st.dataset.s = "wait"; st.textContent = "Waiting for the game";
+    $("link-note").innerHTML = "Start the game with <b>SurvivalPack.AtlasLink</b> in BepInEx/plugins. If your browser asks to let this site reach devices on your network, allow it: the plugin only answers on this PC. Safari can't link; use Chrome, Edge or Firefox."; return; }
+  if (!d.inRaid) { st.dataset.s = "live"; st.textContent = "Linked · start a raid"; $("link-note").textContent = "When your raid loads, the map and your spawn are picked for you."; return; }
+  const side = { Usec: "PMC", Bear: "PMC", Savage: "Scav" }[d.side] || "";
+  st.dataset.s = "raid"; st.textContent = `In raid on ${mapName(d.map)}${side ? " as " + side : ""}`;
+  if (!onAtlas(d.map)) { $("link-note").textContent = `${mapName(d.map)} isn't on the atlas yet.`; return; }
+  here.hidden = false;
+  here.textContent = map?.id === d.map ? "Re-plan from where I am" : `Go to my raid on ${mapName(d.map)}`;
+  $("link-note").textContent = map?.id === d.map ? "The pink arrow is you. Re-planning skips places you've walked right past this raid." : "";
+}
+$("link-btn").addEventListener("click", () => {
+  GAME.on = !GAME.on; try { localStorage.setItem("atlas-link", GAME.on ? "1" : "0"); } catch {}
+  if (GAME.on) pollGame(); else { clearTimeout(GAME.timer); GAME.d = null; }
+  setLinkSt();
+});
+$("link-here").addEventListener("click", () => {
+  const d = GAME.d; if (!d?.inRaid || !onAtlas(d.map)) return;
+  if (map?.id !== d.map) { go(d.map); return; }
+  GAME.from = { map: d.map, x: d.pos[0], y: d.pos[1], z: d.pos[2], label: "Where you are (from the game)", replan: true };
+  RUN.spawn = -2; renderRunForm(); scheduleRun();
+});
+// the "You" arrow follows the game, eased between reads
+function drawYou(w, h) {
+  const el = $("you"), d = GAME.d;
+  if (!GAME.on || !d?.inRaid || !d.pos || d.map !== map?.id) { el.hidden = true; return; }
+  const t = d.pos; GAME.show = GAME.show ? GAME.show.map((v, i) => v + (t[i] - v) * 0.2) : t.slice();
+  const [x, y, z] = GAME.show, yaw = (d.yaw || 0) * Math.PI / 180;
+  if (y < uniforms.uYMin.value - 1 || y > uniforms.uYMax.value + 2) { el.hidden = true; return; }
+  v3.set(...toWorld(x, y + 1, z)).project(camera);
+  if (v3.z > 1 || Math.abs(v3.x) > 1.05 || Math.abs(v3.y) > 1.05) { el.hidden = true; return; }
+  const sx = (v3.x + 1) / 2 * w, sy = (1 - v3.y) / 2 * h;
+  v3.set(...toWorld(x + Math.sin(yaw) * 4, y + 1, z + Math.cos(yaw) * 4)).project(camera);
+  const ang = Math.atan2((v3.x + 1) / 2 * w - sx, -((1 - v3.y) / 2 * h - sy));
+  el.hidden = false; el.style.left = sx + "px"; el.style.top = sy + "px";
+  el.querySelector("svg").style.transform = `rotate(${ang}rad)`;
+}
+setLinkSt(); if (GAME.on) pollGame();
 
 // click a spawn dot to start there
 canvas.addEventListener("click", (ev) => {
@@ -2444,6 +2563,7 @@ function tick() {
     if (vis) placed.push([x, y]);
     el.style.left = x + "px"; el.style.top = y + "px";
   });
+  drawYou(w, h);
   for (const m of runMarks) { // loot-run markers sit on top of everything
     v3.copy(m.p).project(camera);
     const onFloor = m.p.y >= uniforms.uYMin.value - 0.5 && m.p.y <= uniforms.uYMax.value + 2; // other floors' markers hide in a floor view

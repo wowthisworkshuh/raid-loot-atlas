@@ -67,6 +67,17 @@ What it powers, once the dumps are in:
 - **Suggested keys:** the keys per map whose rooms are worth the most.
 - **Interior layouts:** walls traced round the edges of the walkable areas (every room, corridor and stairwell the bots can reach), filled in with the collision shapes, on the real terrain.
 
+## Link the loot run to your game (kit/AtlasLink)
+
+`SurvivalPack.AtlasLink` is a small BepInEx plugin for your own game. While you play it answers on your PC only (`http://127.0.0.1:47320/raid`, read only) with the map you're on, your side, your spawn and where you are now. Nothing in the game is changed, and only the atlas site (or a page on your PC) can read it from a browser.
+
+1. Download `SurvivalPack.AtlasLink.dll` from the [AtlasLink release](https://github.com/wowthisworkshuh/raid-loot-atlas/releases) and put it in `<SPT>\BepInEx\plugins\SurvivalPack.AtlasLink\`. Each friend who wants it puts it in their own game.
+2. Open the atlas, switch to **Loot run** and press **Link to my game**. Chrome or Edge may ask to let the site reach devices on your network: allow it (the plugin only answers on this PC). Safari can't link.
+3. Start a raid. The atlas switches to that map and plans from your real spawn with your current settings. A pink arrow shows where you are and which way you face.
+4. Mid-raid, **Re-plan from where I am** starts a new route where you stand and skips places you've walked right past this raid.
+
+Settings (port, allowed sites, the in-game message) are in `BepInEx\config\com.survivalpack.atlaslink.cfg`. Positions are the game's own coordinates, the same ones the map dumps use.
+
 ## Adding a real map model (kit/)
 
 You need: the SPT install, [AssetRipper](https://github.com/AssetRipper/AssetRipper/releases), Unity Hub with a Unity editor, and Node.js.
